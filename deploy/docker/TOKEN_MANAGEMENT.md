@@ -5,7 +5,7 @@
 | User | Email | Created | Expires | Status |
 |------|-------|---------|---------|--------|
 | Felipe | f@dy.me | March 22, 2025 | April 21, 2025 | Active |
-| Sean | | To be created | | Pending |
+| Sean | sean@example.com | To be created | | Pending - Generate via SSH |
 
 ## How to Generate/Renew Tokens
 
