@@ -1,6 +1,7 @@
 # Base configuration (not a service, just a reusable config block)
 x-base-config: &base-config
   ports:
+    - "80:8000"      # Map port 80 to internal port 8000 (main API service)
     - "11235:11235"
     - "8000:8000"
     - "9222:9222"
