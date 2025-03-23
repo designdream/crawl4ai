@@ -1,340 +1,297 @@
 """
-ScrapingBee Helper for Crawl4AI
+ScrapingBee Helper - Server Optimized Version
 
-This module provides helper functions for ScrapingBee integration with Crawl4AI,
-ensuring proper configuration with SSL certificate handling and the correct proxy format.
-Includes speed-optimized configurations following ScrapingBee best practices.
+This module provides optimized configurations for the ScrapingBee API
+with a focus on maximizing remote processing and efficient resource usage
+on server deployments (DigitalOcean).
 """
 import os
-import logging
-import urllib3
-from typing import Dict, Optional, Tuple, Any, Union
+import json
+from typing import Dict, Any, Optional
+from urllib.parse import urlparse
+from dotenv import load_dotenv
 
-# Disable SSL warnings when using ScrapingBee
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-logger = logging.getLogger(__name__)
-
-def get_scrapingbee_proxy_config(api_key: Optional[str] = None, 
-                                render_js: bool = True,
-                                premium_proxy: bool = True,
-                                additional_params: Dict[str, Any] = None) -> Dict[str, str]:
+def get_scrapingbee_proxy_config(
+    api_key: Optional[str] = None,
+    additional_params: Dict[str, Any] = None
+) -> Dict[str, str]:
     """
-    Generate the correct ScrapingBee proxy configuration for integration with Crawl4AI.
+    Generate a proxy configuration for ScrapingBee.
     
     Args:
-        api_key: ScrapingBee API key (if None, will try to get from SCRAPINGBEE_KEY env var)
-        render_js: Whether to enable JavaScript rendering
-        premium_proxy: Whether to use premium proxies
-        additional_params: Additional parameters to include in the proxy password
-    
-    Returns:
-        Dictionary with the proper ScrapingBee proxy configuration
-    """
-    # Get API key from environment if not provided
-    if not api_key:
-        api_key = os.getenv("SCRAPINGBEE_KEY")
-        if not api_key:
-            logger.warning("⚠️ No ScrapingBee API key provided. ScrapingBee integration will not work.")
-            return {}
-    
-    # Build password parameters string
-    password_params = []
-    if render_js:
-        password_params.append("render_js=true")
-    if premium_proxy:
-        password_params.append("premium_proxy=true")
-    
-    # Add any additional parameters
-    if additional_params:
-        for key, value in additional_params.items():
-            password_params.append(f"{key}={value}")
-    
-    # Join all parameters with &
-    password = "&".join(password_params)
-    
-    # Build the proxy configuration
-    proxy_config = {
-        "server": "http://proxy.scrapingbee.com:8886",
-        "username": api_key,
-        "password": password
-    }
-    
-    logger.info(f"✅ Generated ScrapingBee proxy configuration. Server: {proxy_config['server']}")
-    return proxy_config
-
-def get_scrapingbee_url_format(api_key: Optional[str] = None,
-                              render_js: bool = True,
-                              premium_proxy: bool = True,
-                              additional_params: Dict[str, Any] = None) -> str:
-    """
-    Generate the ScrapingBee proxy URL in the format expected by some libraries.
-    
-    Args:
-        api_key: ScrapingBee API key (if None, will try to get from SCRAPINGBEE_KEY env var)
-        render_js: Whether to enable JavaScript rendering
-        premium_proxy: Whether to use premium proxies
-        additional_params: Additional parameters to include in the proxy URL
-    
-    Returns:
-        ScrapingBee proxy URL string
-    """
-    # Get API key from environment if not provided
-    if not api_key:
-        api_key = os.getenv("SCRAPINGBEE_KEY")
-        if not api_key:
-            logger.warning("⚠️ No ScrapingBee API key provided. ScrapingBee integration will not work.")
-            return ""
-    
-    # Build password parameters string
-    password_params = []
-    if render_js:
-        password_params.append("render_js=true")
-    if premium_proxy:
-        password_params.append("premium_proxy=true")
-    
-    # Add any additional parameters
-    if additional_params:
-        for key, value in additional_params.items():
-            password_params.append(f"{key}={value}")
-    
-    # Join all parameters with &
-    password = "&".join(password_params)
-    
-    # Build the proxy URL
-    proxy_url = f"http://{api_key}:{password}@proxy.scrapingbee.com:8886"
-    
-    logger.info(f"✅ Generated ScrapingBee proxy URL")
-    return proxy_url
-
-def verify_scrapingbee_integration() -> Tuple[bool, str]:
-    """
-    Verify that ScrapingBee integration is working correctly.
-    
-    Returns:
-        Tuple of (is_working, message)
-    """
-    import requests
-    
-    api_key = os.getenv("SCRAPINGBEE_KEY")
-    if not api_key:
-        return False, "❌ No ScrapingBee API key found in environment. Set SCRAPINGBEE_KEY."
-    
-    test_url = "https://httpbin.org/ip"
-    
-    # First make a direct request
-    try:
-        direct_response = requests.get(test_url, timeout=10)
-        direct_ip = direct_response.json().get("origin", "unknown")
-    except Exception as e:
-        return False, f"❌ Error making direct request: {str(e)}"
-    
-    # Now try with ScrapingBee
-    proxy_url = get_scrapingbee_url_format(api_key)
-    proxies = {
-        "http": proxy_url,
-        "https": proxy_url.replace("http://", "https://").replace(":8886", ":8887")
-    }
-    
-    try:
-        # Important: Disable SSL verification for ScrapingBee as per their documentation
-        proxy_response = requests.get(
-            test_url, 
-            proxies=proxies,
-            verify=False,  # Disable SSL verification
-            timeout=30
-        )
-        proxy_ip = proxy_response.json().get("origin", "unknown")
+        api_key: ScrapingBee API key (defaults to env var)
+        additional_params: Additional parameters to pass to ScrapingBee
         
-        # Check if the IPs are different
-        if direct_ip != proxy_ip:
-            return True, f"✅ ScrapingBee is working! Direct IP: {direct_ip}, Proxy IP: {proxy_ip}"
-        else:
-            return False, f"❌ ScrapingBee may not be working. Same IP for direct and proxy: {direct_ip}"
-    except Exception as e:
-        return False, f"❌ Error with ScrapingBee proxy: {str(e)}"
+    Returns:
+        Dictionary with proxy configuration
+    """
+    # Load environment variables if needed
+    load_dotenv(override=True)
+    
+    # Get API key from environment if not provided
+    sb_api_key = api_key or os.getenv("SCRAPINGBEE_API_KEY", "")
+    
+    if not sb_api_key:
+        raise ValueError("ScrapingBee API key is required")
+    
+    # Initialize the proxy parameters
+    params = {}
+    
+    # Add the API key
+    params['api_key'] = sb_api_key
+    
+    # Add additional parameters if provided
+    if additional_params:
+        params.update(additional_params)
+        
+    return params
+
+# Site-specific optimizations for ScrapingBee
+# These configurations are optimized for server deployment
+# Focus on reliability and maximizing remote processing
+SITE_OPTIMIZATIONS = {
+    # Default configurations
+    'static': {
+        'render_js': False,
+        'premium_proxy': True,
+        'timeout_ms': 10000,  # 10 seconds for server with good connectivity
+        'block_resources': True,  # Still block resources to save bandwidth
+        'block_ads': True,
+        'wait_browser': None,
+        'extract_rules': {  # Remote extraction of links
+            'links': {
+                'selector': 'a',
+                'output': '@href'
+            }
+        },
+        'extra_params': {
+            'country_code': 'us',
+        }
+    },
+    'js': {
+        'render_js': True,
+        'premium_proxy': True,
+        'timeout_ms': 15000,  # Servers can wait longer than battery devices
+        'block_resources': True,
+        'block_ads': True,
+        'wait_browser': 'domcontentloaded',  # Valid string value
+        'extract_rules': {  # Remote extraction of links
+            'links': {
+                'selector': 'a',
+                'output': '@href'
+            }
+        },
+        'extra_params': {
+            'country_code': 'us',
+        }
+    },
+    # Site-specific configurations
+    'cebroker': {
+        'render_js': True,
+        'premium_proxy': True,
+        'timeout_ms': 20000,  # CE Broker needs extra time, can be longer on server
+        'block_resources': False,  # May need all resources
+        'block_ads': True,
+        'wait_browser': 'networkidle0',  # Wait for network to be idle
+        'extract_rules': {  # Remote extraction of links
+            'links': {
+                'selector': 'a',
+                'output': '@href'
+            }
+        },
+        'extra_params': {
+            'country_code': 'us',
+            'device': 'desktop',
+            'stealth_proxy': 'true',  # Extra stealth for Cloudflare detection
+        }
+    },
+    'ncsbn': {
+        'render_js': True,
+        'premium_proxy': True,
+        'timeout_ms': 15000,
+        'block_resources': True,
+        'block_ads': True,
+        'wait_browser': 'domcontentloaded',  # Valid string value
+        'extract_rules': {  # Remote extraction of links
+            'links': {
+                'selector': 'a',
+                'output': '@href'
+            }
+        },
+        'extra_params': {
+            'country_code': 'us',
+            'device': 'desktop',
+        }
+    },
+    'bon.texas': {
+        'render_js': True,  # Texas BON appears to need JS
+        'premium_proxy': True,
+        'timeout_ms': 15000,
+        'block_resources': True,
+        'block_ads': True,
+        'wait_browser': 'domcontentloaded',
+        'extra_params': {
+            'country_code': 'us',
+        }
+    },
+}
+
+def detect_site_type(url: str) -> str:
+    """
+    Determine whether a website is likely static or requires JavaScript rendering.
+    Also identifies specific sites that have custom optimizations.
+    
+    Args:
+        url: The URL to analyze
+        
+    Returns:
+        str: Site type identifier ('js', 'static', or a specific site id)
+    """
+    url_lower = url.lower()
+    parsed = urlparse(url_lower)
+    domain = parsed.netloc
+    
+    # Check for specific sites with custom configurations
+    if 'cebroker.com' in domain:
+        return 'cebroker'
+    elif 'ncsbn.org' in domain:
+        return 'ncsbn'
+    elif 'bon.texas.gov' in domain:
+        return 'bon.texas'
+    
+    # Known JS-heavy domains and platforms
+    js_heavy_domains = [
+        # Social media and complex web apps
+        'facebook', 'twitter', 'linkedin', 'instagram',
+        # CE and nursing platforms known to use JS heavily
+        'nursys', 'nursingworld', 'ceapprentice',
+        # State boards with modern JS interfaces
+        'azbn.gov', 'doh.wa.gov',
+    ]
+    
+    # Known static site indicators
+    static_site_indicators = [
+        # Government domains often have simpler, static sites
+        '.gov', '.state.', 'health.ny', 'mbon.maryland',
+        # Classic PHP sites
+        '.php', 'wp-content',
+        # Old-school state board sites
+        'rn.ca.gov', 'maine.gov', 'dos.pa.gov'
+    ]
+    
+    # First check for explicit JS frameworks in the URL
+    js_framework_patterns = ['react', 'angular', 'vue', 'ember', 'backbone', 'spa']
+    for pattern in js_framework_patterns:
+        if pattern in url_lower:
+            return 'js'
+    
+    # Check for JS-heavy domains
+    for js_domain in js_heavy_domains:
+        if js_domain in domain or js_domain in url_lower:
+            return 'js'
+    
+    # Check for static site indicators
+    for indicator in static_site_indicators:
+        if indicator in domain or indicator in url_lower:
+            return 'static'
+    
+    # Default to JS for unknown sites to ensure proper rendering
+    # This is a conservative approach for regulatory sites which may have
+    # important content loaded via JavaScript
+    return 'js'
+
 
 def get_optimized_scrapingbee_config(
     api_key: Optional[str] = None,
     render_js: bool = False,  # Default to False for speed
     premium_proxy: bool = True,
-    timeout_ms: int = 10000,  # 10 second timeout
+    timeout_ms: int = 12000,  # Default higher for server deployment
     block_resources: bool = True,
     block_ads: bool = True,
-    wait_browser: bool = False,
-    country_code: Optional[str] = None,
-    additional_params: Optional[Dict[str, Any]] = None
+    wait_browser: Optional[str] = None,  # Must be one of: load, domcontentloaded, networkidle0, networkidle2
+    site_type: str = "unknown",  # Used for site-specific optimizations
+    extract_remotely: bool = True,  # Default to True for server - always use remote extraction
+    additional_params: Dict[str, Any] = None
 ) -> Dict[str, str]:
     """
-    Generate a speed-optimized ScrapingBee proxy configuration.
+    Generate a server-optimized ScrapingBee proxy configuration.
     
     Args:
         api_key: ScrapingBee API key
-        render_js: Enable JavaScript (default=False for speed, only enable when needed)
-        premium_proxy: Use premium proxies (recommended for better performance)
+        render_js: Enable JavaScript (only enable when needed)
+        premium_proxy: Use premium proxies
         timeout_ms: Request timeout in milliseconds
-        block_resources: Block loading of resources like CSS, images, fonts, etc.
+        block_resources: Block loading of resources like CSS, images
         block_ads: Block advertisements
-        wait_browser: Wait for browser to fully load resources (False for speed)
-        country_code: Two-letter country code for geo-targeting proxies
+        wait_browser: Wait for browser to fully load resources
+        site_type: Type of site for optimization
+        extract_remotely: Use ScrapingBee's extract_rules to process links remotely
         additional_params: Any additional parameters
         
     Returns:
         Optimized proxy configuration dictionary
     """
-    # Create a structured set of additional parameters
-    opt_params = {}
+    # Initialize params
+    params = {}
     
-    # Add optimization parameters
-    if block_resources:
-        opt_params['block_resources'] = 'true'
-    if block_ads:
-        opt_params['block_ads'] = 'true'
-    if not wait_browser:
-        opt_params['wait_browser'] = 'false'
-    
-    # Add timeout parameter
-    opt_params['timeout'] = str(timeout_ms)
-    
-    # Add country code if provided
-    if country_code:
-        opt_params['country_code'] = country_code
-    
-    # Add any custom additional parameters
-    if additional_params:
-        opt_params.update(additional_params)
-    
-    # Get the configuration using the base helper function with our optimized params
-    return get_scrapingbee_proxy_config(
-        api_key=api_key,
-        render_js=render_js,  # Pass through directly
-        premium_proxy=premium_proxy,  # Pass through directly
-        additional_params=opt_params
-    )
-
-def get_optimized_proxies_dict(
-    api_key: Optional[str] = None,
-    render_js: bool = False,  # Default to False for speed
-    premium_proxy: bool = True,
-    timeout_ms: int = 10000,  # 10 second timeout
-    block_resources: bool = True,
-    block_ads: bool = True,
-    wait_browser: bool = False,
-    country_code: Optional[str] = None,
-    additional_params: Optional[Dict[str, Any]] = None
-) -> Dict[str, str]:
-    """
-    Generate a speed-optimized proxies dictionary for requests library.
-    
-    Args:
-        api_key: ScrapingBee API key
-        render_js: Enable JavaScript (default=False for speed, only enable when needed)
-        premium_proxy: Use premium proxies (recommended for better performance)
-        timeout_ms: Request timeout in milliseconds
-        block_resources: Block loading of resources like CSS, images, fonts, etc.
-        block_ads: Block advertisements
-        wait_browser: Wait for browser to fully load resources (False for speed)
-        country_code: Two-letter country code for geo-targeting proxies
-        additional_params: Any additional parameters
+    # Check for site-specific optimizations
+    if site_type in SITE_OPTIMIZATIONS:
+        # Get site-specific configuration
+        site_config = SITE_OPTIMIZATIONS[site_type].copy()
+            
+        # Set extract_rules if remote extraction requested
+        if extract_remotely and 'extract_rules' in site_config:
+            params['extract_rules'] = json.dumps(site_config['extract_rules'])
+            
+        # Get extra params from the site config
+        extra_params = site_config.pop('extra_params', {})
+        if extra_params:
+            params.update(extra_params)
+            
+        # Override function parameters with site-specific ones
+        render_js = site_config.get('render_js', render_js)
+        premium_proxy = site_config.get('premium_proxy', premium_proxy)
+        timeout_ms = site_config.get('timeout_ms', timeout_ms)
+        block_resources = site_config.get('block_resources', block_resources)
+        block_ads = site_config.get('block_ads', block_ads)
         
-    Returns:
-        Optimized proxies dictionary
-    """
-    # Get API key from environment if not provided
-    if not api_key:
-        api_key = os.getenv("SCRAPINGBEE_KEY")
-        if not api_key:
-            logger.warning("⚠️ No ScrapingBee API key provided. ScrapingBee integration will not work.")
-            return {}
-    
-    # Build password parameters
-    password_params = []
-    
-    # Set core optimizations
+        # Override wait_browser only if specified in site config and valid
+        site_wait_browser = site_config.get('wait_browser')
+        if site_wait_browser and site_wait_browser in ['load', 'domcontentloaded', 'networkidle0', 'networkidle2']:
+            wait_browser = site_wait_browser
+
+    # Set the parameters
     if render_js:
-        password_params.append("render_js=true")
+        params['render_js'] = 'true'
     if premium_proxy:
-        password_params.append("premium_proxy=true")
+        params['premium_proxy'] = 'true'
     if block_resources:
-        password_params.append("block_resources=true")
+        params['block_resources'] = 'true'
     if block_ads:
-        password_params.append("block_ads=true")
-    if not wait_browser:
-        password_params.append("wait_browser=false")
+        params['block_ads'] = 'true'
+    # Handle wait_browser parameter correctly
+    # Must be one of: load, domcontentloaded, networkidle0, networkidle2
+    if wait_browser in ['load', 'domcontentloaded', 'networkidle0', 'networkidle2']:
+        params['wait_browser'] = wait_browser
     
-    # Add timeout
-    password_params.append(f"timeout={timeout_ms}")
+    params['timeout'] = str(timeout_ms)
     
-    # Add country code if provided
-    if country_code:
-        password_params.append(f"country_code={country_code}")
+    # Add extract_rules for remote link extraction if requested and not already set
+    if extract_remotely and 'extract_rules' not in params:
+        # Default extraction rules for links
+        params['extract_rules'] = json.dumps({
+            'links': {
+                'selector': 'a',
+                'output': '@href'
+            }
+        })
     
     # Add any additional parameters
     if additional_params:
-        for key, value in additional_params.items():
-            password_params.append(f"{key}={value}")
-    
-    # Join all parameters
-    password = "&".join(password_params)
-    
-    # Create proxy URLs
-    http_proxy = f"http://{api_key}:{password}@proxy.scrapingbee.com:8886"
-    https_proxy = f"https://{api_key}:{password}@proxy.scrapingbee.com:8887"
-    
-    return {
-        "http": http_proxy,
-        "https": https_proxy
-    }
-
-def is_scrapingbee_enabled() -> bool:
-    """Check if ScrapingBee integration is enabled by checking for API key"""
-    return bool(os.getenv("SCRAPINGBEE_KEY"))
-
-def optimize_crawler_for_speed(crawler_config: Any) -> Any:
-    """
-    Apply speed optimizations to a crawler configuration using ScrapingBee.
-    
-    Args:
-        crawler_config: CrawlerRunConfig object to optimize
+        params.update(additional_params)
         
-    Returns:
-        Updated crawler configuration
-    """
-    # Check if ScrapingBee is enabled
-    if not is_scrapingbee_enabled():
-        logger.warning("⚠️ ScrapingBee optimization skipped: No API key found in environment")
-        return crawler_config
-    
-    # Get optimized ScrapingBee configuration
-    proxy_config = get_optimized_scrapingbee_config()
-    
-    # Set proxy configuration
-    if hasattr(crawler_config, 'proxy_config'):
-        crawler_config.proxy_config = proxy_config
-    
-    # Disable SSL verification for ScrapingBee
-    if hasattr(crawler_config, 'verify_ssl'):
-        crawler_config.verify_ssl = False
-    
-    # Set other crawler speed optimizations if available
-    if hasattr(crawler_config, 'timeout'):
-        crawler_config.timeout = 30  # 30 seconds max for total crawl
-    
-    logger.info("✅ Applied ScrapingBee speed optimizations to crawler config")
-    return crawler_config
-
-
-if __name__ == "__main__":
-    # When run directly, verify the integration
-    import sys
-    logging.basicConfig(level=logging.INFO)
-    
-    success, message = verify_scrapingbee_integration()
-    print(message)
-    
-    if success:
-        print("\n✅ ScrapingBee integration is working correctly!")
-        sys.exit(0)
-    else:
-        print("\n❌ ScrapingBee integration is NOT working correctly.")
-        sys.exit(1)
+    # Get the configuration using the base helper function
+    return get_scrapingbee_proxy_config(
+        api_key=api_key,
+        additional_params=params
+    )
