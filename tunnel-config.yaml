@@ -1,0 +1,7 @@
+tunnel: 073fc64e-e173-44e5-a951-70a6415c418f
+credentials-file: /Users/feliperecalde/.cloudflared/073fc64e-e173-44e5-a951-70a6415c418f.json
+
+ingress:
+  - hostname: s.dy.me
+    service: http://164.92.69.88:80
+  - service: http_status:404

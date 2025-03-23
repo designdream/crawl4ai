@@ -1,0 +1,25 @@
+name: crawl4ai
+services:
+- name: crawl4ai-service
+  image:
+    registry_type: DOCKER_HUB
+    repository: designdream/crawl4ai
+    tag: latest
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: basic-xs
+  routes:
+  - path: /
+  envs:
+  # These environment variables will be populated in the Digital Ocean console
+  - key: OPENAI_API_KEY
+    scope: RUN_TIME
+    value: ${openai_api_key}
+  # Add other environment variables as needed
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 20
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3

@@ -1,0 +1,50 @@
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    wget \
+    gnupg \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome
+RUN curl -sS -o - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up the app directory
+WORKDIR /app
+
+# Copy requirements and install dependencies first (for better caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional packages for authentication
+RUN pip install --no-cache-dir fastapi-login python-multipart
+
+# Copy the application code
+COPY . .
+
+# Copy the secure configuration
+COPY deploy/docker/config.yml /app/
+COPY deploy/docker/generate_token.py /app/
+
+# Make token generator executable
+RUN chmod +x /app/generate_token.py
+
+# Set environment variables (these will be overridden by the CI/CD pipeline)
+ENV SECRET_KEY="replace_with_secure_key_in_ci_cd"
+ENV SECURITY_ENABLED=true
+ENV JWT_ENABLED=true
+
+# Expose the application port
+EXPOSE 8000
+
+# Start the application
+CMD ["python", "-m", "uvicorn", "deploy.docker.server:app", "--host", "0.0.0.0", "--port", "8000"]

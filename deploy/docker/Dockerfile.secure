@@ -1,0 +1,48 @@
+# Secure Dockerfile for Crawl4AI with JWT Authentication
+# ==========================================================
+#
+# DEPLOYMENT INSTRUCTIONS:
+# 
+# 1. Generate a secure random string for the SECRET_KEY:
+#    openssl rand -hex 32
+#
+# 2. Replace the SECRET_KEY value below with the generated string
+# 
+# 3. Build the secure Docker image:
+#    docker build -t crawl4ai-secure:latest -f Dockerfile.secure .
+#
+# 4. Deploy to your Digital Ocean server:
+#    a. SSH into your server: ssh root@164.92.69.88
+#    b. Copy these files to the server:
+#       - scp config.yml generate_token.py Dockerfile.secure root@164.92.69.88:~/
+#    c. On server, build the secure image:
+#       docker build -t crawl4ai-secure:latest -f Dockerfile.secure .
+#    d. On server, stop the existing container:
+#       docker stop crawl4ai-container
+#       docker rm crawl4ai-container
+#    e. Start the secure container:
+#       docker run -d -p 80:8000 --restart always --name crawl4ai-container crawl4ai-secure:latest
+#
+# 5. Generate an access token:
+#    On server: docker exec -it crawl4ai-container python /app/generate_token.py --email your@email.com
+#
+# 6. Test authentication:
+#    curl -H "Authorization: Bearer YOUR_TOKEN" https://s.dy.me/health
+#    curl -H "Authorization: Bearer YOUR_TOKEN" http://164.92.69.88/health
+
+FROM crawl4ai:latest
+
+# Set environment variables for security (secured with generated key)
+ENV SECRET_KEY="d68124424f40a43aa20606431f13e9ed918771badac97f001a82d4f681f6f391"
+ENV SECURITY_ENABLED=true
+ENV JWT_ENABLED=true
+
+# Make the token generator executable
+COPY generate_token.py /app/
+RUN chmod +x /app/generate_token.py
+
+# Copy the secure config
+COPY config.yml /app/
+
+EXPOSE 8000
+# Use the existing entrypoint from the base image

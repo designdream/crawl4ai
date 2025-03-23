@@ -19,6 +19,13 @@ lib64/
 parts/
 sdist/
 var/
+
+# Sensitive deployment files
+deploy/docker/token.txt
+*.pem
+.env
+*secret*
+**/secrets/
 wheels/
 share/python-wheels/
 *.egg-info/
