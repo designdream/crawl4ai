@@ -1596,6 +1596,7 @@ def perform_completion_with_backoff(
     1. Sends a completion request to the API.
     2. Retries on rate-limit errors with exponential delays.
     3. Returns the API response or an error after all retries.
+    4. Provides detailed debugging information for API errors.
 
     Args:
         provider (str): The name of the API provider.
@@ -1608,12 +1609,45 @@ def perform_completion_with_backoff(
     Returns:
         dict: The API response or an error message after all retries.
     """
-
+    import traceback
+    import logging
     from litellm import completion
-    from litellm.exceptions import RateLimitError
+    from litellm.exceptions import RateLimitError, APIError, APIConnectionError, \
+        AuthenticationError, BadRequestError, ServiceUnavailableError, Timeout
+
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("llm_debug")
 
     max_attempts = 3
     base_delay = 2  # Base delay in seconds, you can adjust this based on your needs
+
+    # Create a debug info object that will be returned with errors
+    debug_info = {
+        "provider": provider,
+        "api_token_available": bool(api_token),  # Don't log the actual token
+        "base_url": base_url,
+        "attempts": 0,
+        "error_type": None,
+        "error_message": None,
+        "error_traceback": None,
+        "suggestion": None
+    }
+
+    # Record provider type for more specific error handling
+    provider_type = provider.split("/")[0] if "/" in provider else "unknown"
+    debug_info["provider_type"] = provider_type
+
+    # Check for API token availability right away
+    if not api_token:
+        error_msg = f"No API token provided for {provider}"
+        logger.error(error_msg)
+        debug_info["error_type"] = "AuthenticationError"
+        debug_info["error_message"] = error_msg
+        debug_info["suggestion"] = f"Please provide a valid API key for {provider_type.upper()}_API_KEY in your environment variables."
+        
+        # Create a mock response with error information
+        return create_error_response("auth_error", error_msg, debug_info)
 
     extra_args = {"temperature": 0.01, "api_key": api_token, "base_url": base_url}
     if json_response:
@@ -1623,31 +1657,170 @@ def perform_completion_with_backoff(
         extra_args.update(kwargs["extra_args"])
 
     for attempt in range(max_attempts):
+        debug_info["attempts"] = attempt + 1
         try:
+            logger.info(f"Attempt {attempt+1}/{max_attempts} for {provider}")
             response = completion(
                 model=provider,
                 messages=[{"role": "user", "content": prompt_with_variables}],
                 **extra_args,
             )
+            # Log successful response for debugging
+            logger.info(f"Success: Received response from {provider}")
             return response  # Return the successful response
+
+        except AuthenticationError as e:
+            error_msg = f"Authentication error with {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = "AuthenticationError"
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            
+            # Provider-specific suggestions
+            if provider_type == "anthropic":
+                debug_info["suggestion"] = "Check that ANTHROPIC_API_KEY is set correctly in your environment variables."
+            elif provider_type == "openai":
+                debug_info["suggestion"] = "Check that OPENAI_API_KEY is set correctly in your environment variables."
+            else:
+                debug_info["suggestion"] = f"Check that {provider_type.upper()}_API_KEY is set correctly in your environment variables."
+            
+            # Don't retry authentication errors
+            return create_error_response("auth_error", error_msg, debug_info)
+
         except RateLimitError as e:
-            print("Rate limit error:", str(e))
+            error_msg = f"Rate limit exceeded for {provider}: {str(e)}"
+            logger.warning(error_msg)
+            debug_info["error_type"] = "RateLimitError"
+            debug_info["error_message"] = str(e)
+            debug_info["suggestion"] = "The API rate limit was exceeded. Consider using a different model or waiting before retrying."
 
             # Check if we have exhausted our max attempts
             if attempt < max_attempts - 1:
                 # Calculate the delay and wait
                 delay = base_delay * (2**attempt)  # Exponential backoff formula
-                print(f"Waiting for {delay} seconds before retrying...")
+                logger.info(f"Waiting for {delay} seconds before retrying...")
                 time.sleep(delay)
             else:
-                # Return an error response after exhausting all retries
-                return [
-                    {
-                        "index": 0,
-                        "tags": ["error"],
-                        "content": ["Rate limit error. Please try again later."],
-                    }
-                ]
+                debug_info["error_traceback"] = traceback.format_exc()
+                return create_error_response("rate_limit", error_msg, debug_info)
+
+        except APIConnectionError as e:
+            error_msg = f"Connection error with {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = "APIConnectionError"
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            debug_info["suggestion"] = "Check your internet connection and that the API service is available."
+            
+            # Retry connection errors with backoff
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.info(f"Waiting for {delay} seconds before retrying...")
+                time.sleep(delay)
+            else:
+                return create_error_response("connection_error", error_msg, debug_info)
+
+        except Timeout as e:
+            error_msg = f"Timeout error with {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = "Timeout"
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            debug_info["suggestion"] = "The request timed out. The API service might be experiencing high load."
+            
+            # Retry timeout errors with backoff
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.info(f"Waiting for {delay} seconds before retrying...")
+                time.sleep(delay)
+            else:
+                return create_error_response("timeout", error_msg, debug_info)
+
+        except BadRequestError as e:
+            error_msg = f"Bad request to {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = "BadRequestError"
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            debug_info["suggestion"] = "The request was invalid. Check your input parameters and formatting."
+            
+            # Don't retry bad requests
+            return create_error_response("bad_request", error_msg, debug_info)
+
+        except ServiceUnavailableError as e:
+            error_msg = f"Service unavailable for {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = "ServiceUnavailableError"
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            debug_info["suggestion"] = "The API service is currently unavailable. Try again later or use a different model."
+            
+            # Retry service unavailable errors with backoff
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.info(f"Waiting for {delay} seconds before retrying...")
+                time.sleep(delay)
+            else:
+                return create_error_response("service_unavailable", error_msg, debug_info)
+
+        except Exception as e:
+            error_msg = f"Unexpected error with {provider}: {str(e)}"
+            logger.error(error_msg)
+            debug_info["error_type"] = type(e).__name__
+            debug_info["error_message"] = str(e)
+            debug_info["error_traceback"] = traceback.format_exc()
+            debug_info["suggestion"] = "An unexpected error occurred. Check the error details for more information."
+            
+            # Retry unknown errors with backoff
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.info(f"Waiting for {delay} seconds before retrying...")
+                time.sleep(delay)
+            else:
+                return create_error_response("unknown_error", error_msg, debug_info)
+
+
+def create_error_response(error_type, error_message, debug_info=None):
+    """
+    Create a structured error response that can be handled by the frontend.
+    
+    Args:
+        error_type (str): Type of error (auth_error, rate_limit, etc.)
+        error_message (str): Human-readable error message
+        debug_info (dict): Additional debugging information
+        
+    Returns:
+        An object that mimics the structure of a successful response but contains error info
+    """
+    import json
+    from collections import namedtuple
+    
+    # Create a mock response object that has similar structure to LiteLLM responses
+    MockResponse = namedtuple('MockResponse', ['choices', 'usage', 'model', 'debug_info'])
+    MockChoices = namedtuple('MockChoices', ['message'])
+    MockMessage = namedtuple('MockMessage', ['content'])
+    MockUsage = namedtuple('MockUsage', ['completion_tokens', 'prompt_tokens', 'total_tokens', 
+                                      'completion_tokens_details', 'prompt_tokens_details'])
+    
+    # JSON structure with error that will be parseable by frontend
+    error_json = {
+        "error": True,
+        "error_type": error_type,
+        "error_message": error_message,
+        "debug_info": debug_info if debug_info else {}
+    }
+    
+    # Format as XML for consistent parsing with extract_xml_data
+    error_content = f"<blocks>{json.dumps([{{'index': 0, 'error': True, 'tags': ['error'], 'content': error_message}}])}</blocks>"
+    
+    # Create a mock response with the error information
+    return MockResponse(
+        choices=[MockChoices(message=MockMessage(content=error_content))],
+        usage=MockUsage(completion_tokens=0, prompt_tokens=0, total_tokens=0, 
+                      completion_tokens_details=None, prompt_tokens_details=None),
+        model=debug_info.get("provider", "unknown") if debug_info else "unknown",
+        debug_info=debug_info
+    )
 
 
 def extract_blocks(url, html, provider=DEFAULT_PROVIDER, api_token=None, base_url=None):
@@ -1658,6 +1831,7 @@ def extract_blocks(url, html, provider=DEFAULT_PROVIDER, api_token=None, base_ur
     1. Prepares a prompt by sanitizing and escaping HTML.
     2. Sends the prompt to an AI provider with optional retries.
     3. Parses the response to extract structured blocks or errors.
+    4. Includes detailed error information for debugging.
 
     Args:
         url (str): The website URL.
@@ -1667,11 +1841,17 @@ def extract_blocks(url, html, provider=DEFAULT_PROVIDER, api_token=None, base_ur
         base_url (Optional[str]): The base URL for the API. Defaults to None.
 
     Returns:
-        List[dict]: A list of extracted content blocks.
+        List[dict]: A list of extracted content blocks or error information.
     """
-
+    import logging
+    logger = logging.getLogger("llm_debug")
+    
     # api_token = os.getenv('GROQ_API_KEY', None) if not api_token else api_token
     api_token = PROVIDER_MODELS.get(provider, None) if not api_token else api_token
+    
+    # Log which provider and if the API token is available
+    logger.info(f"Extracting blocks using provider: {provider}")
+    logger.info(f"API token available: {bool(api_token)}")
 
     variable_values = {
         "URL": url,
@@ -1687,6 +1867,20 @@ def extract_blocks(url, html, provider=DEFAULT_PROVIDER, api_token=None, base_ur
     response = perform_completion_with_backoff(
         provider, prompt_with_variables, api_token, base_url=base_url
     )
+    
+    # Check if response contains debug info (indicating an error)
+    if hasattr(response, 'debug_info') and response.debug_info:
+        logger.error(f"Error in LLM extraction: {response.debug_info.get('error_message')}")
+        # Return blocks with error information that frontend can display
+        return [{
+            "index": 0,
+            "error": True,
+            "error_type": response.debug_info.get('error_type', 'unknown'),
+            "error_message": response.debug_info.get('error_message', 'Unknown error'),
+            "tags": ["error"],
+            "content": response.debug_info.get('suggestion', 'Check API configuration'),
+            "debug_info": response.debug_info
+        }]
 
     try:
         blocks = extract_xml_data(["blocks"], response.choices[0].message.content)[
@@ -1696,7 +1890,9 @@ def extract_blocks(url, html, provider=DEFAULT_PROVIDER, api_token=None, base_ur
         ## Add error: False to the blocks
         for block in blocks:
             block["error"] = False
-    except Exception:
+        
+        logger.info(f"Successfully extracted {len(blocks)} blocks from {url}")
+    except Exception as e:
         parsed, unparsed = split_and_parse_json_objects(
             response.choices[0].message.content
         )
