@@ -1,5 +1,7 @@
 # 🚀🤖 Crawl4AI: Open-source LLM Friendly Web Crawler & Scraper.
 
+> **Note**: This deployment includes JWT authentication and ScrapingBee integration with CI/CD pipeline. Deployed to 164.92.69.88 and available at https://s.dy.me
+
 <div align="center">
 
 <a href="https://trendshift.io/repositories/11716" target="_blank"><img src="https://trendshift.io/api/badge/repositories/11716" alt="unclecode%2Fcrawl4ai | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
