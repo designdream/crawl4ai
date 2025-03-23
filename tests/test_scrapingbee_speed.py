@@ -8,11 +8,15 @@ This script performs two concurrent requests to the same URL using:
 Then it compares the results and timing to show the improvement.
 """
 import os
+import sys
 import time
 import asyncio
 import requests
 from typing import Dict, Tuple
 import logging
+
+# Add the parent directory to the path so we can import crawl4ai
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -55,14 +59,14 @@ async def test_optimized_request(url: str) -> Tuple[float, int, str]:
     """Make a request with optimized config and time it"""
     start_time = time.time()
     
-    # Get optimized proxy config
+    # Get optimized proxy config with speed enhancements
     proxies = get_optimized_proxies_dict(
-        render_js=False,  # Disable JS rendering for speed
-        premium_proxy=True,
-        timeout_ms=15000,  # 15 seconds
-        block_resources=True,
-        block_ads=True,
-        wait_browser=False
+        render_js=False,       # Disable JS rendering for speed
+        premium_proxy=True,    # Use premium proxies for reliability
+        timeout_ms=15000,      # 15 seconds timeout
+        block_resources=True,  # Block images, CSS, fonts, etc.
+        block_ads=True,        # Block ads to speed up loading
+        wait_browser=False     # Don't wait for onload event
     )
     
     try:

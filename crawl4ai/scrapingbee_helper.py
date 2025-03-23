@@ -182,34 +182,34 @@ def get_optimized_scrapingbee_config(
     Returns:
         Optimized proxy configuration dictionary
     """
-    # Build basic parameters
-    params = {}
-    if render_js:
-        params['render_js'] = 'true'
-    if premium_proxy:
-        params['premium_proxy'] = 'true'
+    # Create a structured set of additional parameters
+    opt_params = {}
+    
+    # Add optimization parameters
     if block_resources:
-        params['block_resources'] = 'true'
+        opt_params['block_resources'] = 'true'
     if block_ads:
-        params['block_ads'] = 'true'
+        opt_params['block_ads'] = 'true'
     if not wait_browser:
-        params['wait_browser'] = 'false'
+        opt_params['wait_browser'] = 'false'
     
-    params['timeout'] = str(timeout_ms)
+    # Add timeout parameter
+    opt_params['timeout'] = str(timeout_ms)
     
+    # Add country code if provided
     if country_code:
-        params['country_code'] = country_code
+        opt_params['country_code'] = country_code
     
-    # Add any additional parameters
+    # Add any custom additional parameters
     if additional_params:
-        params.update(additional_params)
-        
+        opt_params.update(additional_params)
+    
     # Get the configuration using the base helper function with our optimized params
     return get_scrapingbee_proxy_config(
         api_key=api_key,
-        render_js=False,  # We handle this in params instead
-        premium_proxy=False,  # We handle this in params instead
-        additional_params=params
+        render_js=render_js,  # Pass through directly
+        premium_proxy=premium_proxy,  # Pass through directly
+        additional_params=opt_params
     )
 
 def get_optimized_proxies_dict(
@@ -240,28 +240,6 @@ def get_optimized_proxies_dict(
     Returns:
         Optimized proxies dictionary
     """
-    # Build basic parameters
-    params = {}
-    if render_js:
-        params['render_js'] = 'true'
-    if premium_proxy:
-        params['premium_proxy'] = 'true'
-    if block_resources:
-        params['block_resources'] = 'true'
-    if block_ads:
-        params['block_ads'] = 'true'
-    if not wait_browser:
-        params['wait_browser'] = 'false'
-    
-    params['timeout'] = str(timeout_ms)
-    
-    if country_code:
-        params['country_code'] = country_code
-    
-    # Add any additional parameters
-    if additional_params:
-        params.update(additional_params)
-    
     # Get API key from environment if not provided
     if not api_key:
         api_key = os.getenv("SCRAPINGBEE_KEY")
@@ -269,8 +247,35 @@ def get_optimized_proxies_dict(
             logger.warning("⚠️ No ScrapingBee API key provided. ScrapingBee integration will not work.")
             return {}
     
-    # Build password string
-    password = "&".join([f"{key}={value}" for key, value in params.items()])
+    # Build password parameters
+    password_params = []
+    
+    # Set core optimizations
+    if render_js:
+        password_params.append("render_js=true")
+    if premium_proxy:
+        password_params.append("premium_proxy=true")
+    if block_resources:
+        password_params.append("block_resources=true")
+    if block_ads:
+        password_params.append("block_ads=true")
+    if not wait_browser:
+        password_params.append("wait_browser=false")
+    
+    # Add timeout
+    password_params.append(f"timeout={timeout_ms}")
+    
+    # Add country code if provided
+    if country_code:
+        password_params.append(f"country_code={country_code}")
+    
+    # Add any additional parameters
+    if additional_params:
+        for key, value in additional_params.items():
+            password_params.append(f"{key}={value}")
+    
+    # Join all parameters
+    password = "&".join(password_params)
     
     # Create proxy URLs
     http_proxy = f"http://{api_key}:{password}@proxy.scrapingbee.com:8886"
