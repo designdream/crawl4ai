@@ -21,6 +21,7 @@ PROVIDER_MODELS = {
     "anthropic/claude-3-opus-20240229": os.getenv("ANTHROPIC_API_KEY"),
     "anthropic/claude-3-sonnet-20240229": os.getenv("ANTHROPIC_API_KEY"),
     "anthropic/claude-3-5-sonnet-20240620": os.getenv("ANTHROPIC_API_KEY"),
+    "anthropic/claude-3-7-sonnet-20250219": os.getenv("ANTHROPIC_API_KEY"),
     "gemini/gemini-pro": os.getenv("GEMINI_API_KEY"),
     'gemini/gemini-1.5-pro': os.getenv("GEMINI_API_KEY"),
     'gemini/gemini-2.0-flash': os.getenv("GEMINI_API_KEY"),
