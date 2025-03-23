@@ -35,10 +35,13 @@ async def test_standard_request(url: str) -> Tuple[float, int, str]:
     """Make a request with standard config and time it"""
     start_time = time.time()
     
-    # Get standard proxy config
+    # Get standard proxy config in the exact format required by ScrapingBee
+    api_key = os.getenv('SCRAPINGBEE_KEY')
+    proxy_url = f"http://{api_key}:render_js=true&premium_proxy=true@proxy.scrapingbee.com:8886"
+    
+    # Format #2 as specified in the integration requirements
     proxies = {
-        "http": f"http://{os.getenv('SCRAPINGBEE_KEY')}:render_js=true&premium_proxy=true@proxy.scrapingbee.com:8886",
-        "https": f"https://{os.getenv('SCRAPINGBEE_KEY')}:render_js=true&premium_proxy=true@proxy.scrapingbee.com:8887"
+        "proxy": proxy_url
     }
     
     try:
@@ -59,15 +62,24 @@ async def test_optimized_request(url: str) -> Tuple[float, int, str]:
     """Make a request with optimized config and time it"""
     start_time = time.time()
     
-    # Get optimized proxy config with speed enhancements
-    proxies = get_optimized_proxies_dict(
-        render_js=False,       # Disable JS rendering for speed
-        premium_proxy=True,    # Use premium proxies for reliability
-        timeout_ms=15000,      # 15 seconds timeout
-        block_resources=True,  # Block images, CSS, fonts, etc.
-        block_ads=True,        # Block ads to speed up loading
-        wait_browser=False     # Don't wait for onload event
-    )
+    # Build optimized parameters for speed
+    api_key = os.getenv('SCRAPINGBEE_KEY')
+    password_params = [
+        "premium_proxy=true",     # Use premium proxies
+        "render_js=false",       # Disable JS for speed
+        "block_resources=true",  # Block resources like images, CSS
+        "block_ads=true",        # Block advertisements
+        "wait_browser=false",    # Don't wait for browser events
+        "timeout=15000"          # 15 second timeout
+    ]
+    
+    password = "&".join(password_params)
+    proxy_url = f"http://{api_key}:{password}@proxy.scrapingbee.com:8886"
+    
+    # Format #2 as specified in the integration requirements
+    proxies = {
+        "proxy": proxy_url
+    }
     
     try:
         response = requests.get(
