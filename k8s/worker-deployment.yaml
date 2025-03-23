@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crawl4ai-worker
+  labels:
+    app: crawl4ai
+    component: worker
+spec:
+  replicas: 2  # Starting replica count, will be managed by HPA
+  selector:
+    matchLabels:
+      app: crawl4ai
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: crawl4ai
+        component: worker
+    spec:
+      containers:
+      - name: crawler
+        image: ${DOCKER_REPO}/crawl4ai:latest  # Replace with your Docker image
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        env:
+        - name: SCRAPINGBEE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crawl4ai-secrets
+              key: scrapingbee-api-key
+        - name: REDIS_HOST
+          value: "crawl4ai-redis"
+        - name: CACHE_ENABLED
+          value: "true"
+        - name: CACHE_TTL_HOURS
+          value: "24"
+        - name: WORKER_MODE
+          value: "true"
+        - name: WORKER_POLL_INTERVAL
+          value: "1"  # Poll interval in seconds
