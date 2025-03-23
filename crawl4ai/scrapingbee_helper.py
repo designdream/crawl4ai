@@ -3,6 +3,7 @@ ScrapingBee Helper for Crawl4AI
 
 This module provides helper functions for ScrapingBee integration with Crawl4AI,
 ensuring proper configuration with SSL certificate handling and the correct proxy format.
+Includes speed-optimized configurations following ScrapingBee best practices.
 """
 import os
 import logging
@@ -153,9 +154,170 @@ def verify_scrapingbee_integration() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"❌ Error with ScrapingBee proxy: {str(e)}"
 
+def get_optimized_scrapingbee_config(
+    api_key: Optional[str] = None,
+    render_js: bool = False,  # Default to False for speed
+    premium_proxy: bool = True,
+    timeout_ms: int = 10000,  # 10 second timeout
+    block_resources: bool = True,
+    block_ads: bool = True,
+    wait_browser: bool = False,
+    country_code: Optional[str] = None,
+    additional_params: Optional[Dict[str, Any]] = None
+) -> Dict[str, str]:
+    """
+    Generate a speed-optimized ScrapingBee proxy configuration.
+    
+    Args:
+        api_key: ScrapingBee API key
+        render_js: Enable JavaScript (default=False for speed, only enable when needed)
+        premium_proxy: Use premium proxies (recommended for better performance)
+        timeout_ms: Request timeout in milliseconds
+        block_resources: Block loading of resources like CSS, images, fonts, etc.
+        block_ads: Block advertisements
+        wait_browser: Wait for browser to fully load resources (False for speed)
+        country_code: Two-letter country code for geo-targeting proxies
+        additional_params: Any additional parameters
+        
+    Returns:
+        Optimized proxy configuration dictionary
+    """
+    # Build basic parameters
+    params = {}
+    if render_js:
+        params['render_js'] = 'true'
+    if premium_proxy:
+        params['premium_proxy'] = 'true'
+    if block_resources:
+        params['block_resources'] = 'true'
+    if block_ads:
+        params['block_ads'] = 'true'
+    if not wait_browser:
+        params['wait_browser'] = 'false'
+    
+    params['timeout'] = str(timeout_ms)
+    
+    if country_code:
+        params['country_code'] = country_code
+    
+    # Add any additional parameters
+    if additional_params:
+        params.update(additional_params)
+        
+    # Get the configuration using the base helper function with our optimized params
+    return get_scrapingbee_proxy_config(
+        api_key=api_key,
+        render_js=False,  # We handle this in params instead
+        premium_proxy=False,  # We handle this in params instead
+        additional_params=params
+    )
+
+def get_optimized_proxies_dict(
+    api_key: Optional[str] = None,
+    render_js: bool = False,  # Default to False for speed
+    premium_proxy: bool = True,
+    timeout_ms: int = 10000,  # 10 second timeout
+    block_resources: bool = True,
+    block_ads: bool = True,
+    wait_browser: bool = False,
+    country_code: Optional[str] = None,
+    additional_params: Optional[Dict[str, Any]] = None
+) -> Dict[str, str]:
+    """
+    Generate a speed-optimized proxies dictionary for requests library.
+    
+    Args:
+        api_key: ScrapingBee API key
+        render_js: Enable JavaScript (default=False for speed, only enable when needed)
+        premium_proxy: Use premium proxies (recommended for better performance)
+        timeout_ms: Request timeout in milliseconds
+        block_resources: Block loading of resources like CSS, images, fonts, etc.
+        block_ads: Block advertisements
+        wait_browser: Wait for browser to fully load resources (False for speed)
+        country_code: Two-letter country code for geo-targeting proxies
+        additional_params: Any additional parameters
+        
+    Returns:
+        Optimized proxies dictionary
+    """
+    # Build basic parameters
+    params = {}
+    if render_js:
+        params['render_js'] = 'true'
+    if premium_proxy:
+        params['premium_proxy'] = 'true'
+    if block_resources:
+        params['block_resources'] = 'true'
+    if block_ads:
+        params['block_ads'] = 'true'
+    if not wait_browser:
+        params['wait_browser'] = 'false'
+    
+    params['timeout'] = str(timeout_ms)
+    
+    if country_code:
+        params['country_code'] = country_code
+    
+    # Add any additional parameters
+    if additional_params:
+        params.update(additional_params)
+    
+    # Get API key from environment if not provided
+    if not api_key:
+        api_key = os.getenv("SCRAPINGBEE_KEY")
+        if not api_key:
+            logger.warning("⚠️ No ScrapingBee API key provided. ScrapingBee integration will not work.")
+            return {}
+    
+    # Build password string
+    password = "&".join([f"{key}={value}" for key, value in params.items()])
+    
+    # Create proxy URLs
+    http_proxy = f"http://{api_key}:{password}@proxy.scrapingbee.com:8886"
+    https_proxy = f"https://{api_key}:{password}@proxy.scrapingbee.com:8887"
+    
+    return {
+        "http": http_proxy,
+        "https": https_proxy
+    }
+
 def is_scrapingbee_enabled() -> bool:
     """Check if ScrapingBee integration is enabled by checking for API key"""
     return bool(os.getenv("SCRAPINGBEE_KEY"))
+
+def optimize_crawler_for_speed(crawler_config: Any) -> Any:
+    """
+    Apply speed optimizations to a crawler configuration using ScrapingBee.
+    
+    Args:
+        crawler_config: CrawlerRunConfig object to optimize
+        
+    Returns:
+        Updated crawler configuration
+    """
+    # Check if ScrapingBee is enabled
+    if not is_scrapingbee_enabled():
+        logger.warning("⚠️ ScrapingBee optimization skipped: No API key found in environment")
+        return crawler_config
+    
+    # Get optimized ScrapingBee configuration
+    proxy_config = get_optimized_scrapingbee_config()
+    
+    # Set proxy configuration
+    if hasattr(crawler_config, 'proxy_config'):
+        crawler_config.proxy_config = proxy_config
+    
+    # Disable SSL verification for ScrapingBee
+    if hasattr(crawler_config, 'verify_ssl'):
+        crawler_config.verify_ssl = False
+    
+    # Set other crawler speed optimizations if available
+    if hasattr(crawler_config, 'timeout'):
+        crawler_config.timeout = 30  # 30 seconds max for total crawl
+    
+    logger.info("✅ Applied ScrapingBee speed optimizations to crawler config")
+    return crawler_config
+
 
 if __name__ == "__main__":
     # When run directly, verify the integration
