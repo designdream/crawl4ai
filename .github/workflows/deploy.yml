@@ -51,6 +51,7 @@ jobs:
               -e "SECRET_KEY=${{ secrets.CRAWL4AI_SECRET_KEY }}" \
               -e "SECURITY_ENABLED=true" \
               -e "JWT_ENABLED=true" \
+              -e "SCRAPINGBEE_API_KEY=${{ secrets.SCRAPINGBEE_API_KEY }}" \
               --restart always \
               --name crawl4ai-container \
               ${{ secrets.DOCKERHUB_USERNAME }}/crawl4ai:latest
