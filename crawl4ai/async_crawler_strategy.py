@@ -24,7 +24,7 @@ from .browser_manager import BrowserManager
 
 import aiofiles
 import aiohttp
-import cchardet
+import chardet
 from aiohttp.client import ClientTimeout
 from urllib.parse import urlparse
 from types import MappingProxyType
