@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: ${DOCKER_REPO}/crawl4ai:latest  # Replace with your Docker image
+        image: registry.digitalocean.com/crawl4ai/crawler:latest
         command: ["python", "api_server.py"]
         ports:
         - containerPort: 8000

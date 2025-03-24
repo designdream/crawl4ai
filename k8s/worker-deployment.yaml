@@ -20,6 +20,7 @@ spec:
       containers:
       - name: crawler
         image: registry.digitalocean.com/crawl4ai/crawler:latest
+        imagePullPolicy: Always
         command: ["python", "/app/worker.py"]
         resources:
           requests:

@@ -2638,6 +2638,28 @@ def generate_content_hash(content: str) -> str:
     # return hashlib.sha256(content.encode()).hexdigest()
 
 
+def normalize_text(text: str) -> str:
+    """
+    Normalize text by removing extra whitespace and converting to lowercase.
+    
+    Args:
+        text: The text to normalize
+        
+    Returns:
+        The normalized text
+    """
+    if not text:
+        return ""
+        
+    # Remove extra whitespace and convert to lowercase
+    text = re.sub(r'\s+', ' ', text).strip().lower()
+    
+    # Remove special characters but keep spaces and alphanumeric chars
+    text = re.sub(r'[^\w\s]', '', text)
+    
+    return text
+
+
 def ensure_content_dirs(base_path: str) -> Dict[str, str]:
     """Create content directories if they don't exist"""
     dirs = {

@@ -34,17 +34,24 @@ def get_scrapingbee_proxy_config(
     if not sb_api_key:
         raise ValueError("ScrapingBee API key is required")
     
-    # Initialize the proxy parameters
-    params = {}
-    
-    # Add the API key
-    params['api_key'] = sb_api_key
-    
-    # Add additional parameters if provided
+    # Build parameter string for proxy URL
+    param_str = ""
     if additional_params:
-        params.update(additional_params)
+        param_parts = []
+        for key, value in additional_params.items():
+            # Skip extract_rules as it's not supported in this format
+            if key == 'extract_rules':
+                continue
+            param_parts.append(f"{key}={value}")
         
-    return params
+        if param_parts:
+            param_str = "&".join(param_parts)
+    
+    # Format the proxy URL according to ScrapingBee's required format
+    proxy_url = f"http://{sb_api_key}:{param_str}@proxy.scrapingbee.com:8886"
+    
+    # Return as a proxy configuration
+    return {"proxy": proxy_url}
 
 # Site-specific optimizations for ScrapingBee
 # These configurations are optimized for server deployment
@@ -238,11 +245,7 @@ def get_optimized_scrapingbee_config(
     if site_type in SITE_OPTIMIZATIONS:
         # Get site-specific configuration
         site_config = SITE_OPTIMIZATIONS[site_type].copy()
-            
-        # Set extract_rules if remote extraction requested
-        if extract_remotely and 'extract_rules' in site_config:
-            params['extract_rules'] = json.dumps(site_config['extract_rules'])
-            
+        
         # Get extra params from the site config
         extra_params = site_config.pop('extra_params', {})
         if extra_params:
@@ -260,11 +263,11 @@ def get_optimized_scrapingbee_config(
         if site_wait_browser and site_wait_browser in ['load', 'domcontentloaded', 'networkidle0', 'networkidle2']:
             wait_browser = site_wait_browser
 
-    # Set the parameters
+    # Set the parameters as strings for ScrapingBee format
     if render_js:
         params['render_js'] = 'true'
     if premium_proxy:
-        params['premium_proxy'] = 'true'
+        params['premium'] = 'true'  # Note: this is 'premium' not 'premium_proxy' in the URL format
     if block_resources:
         params['block_resources'] = 'true'
     if block_ads:
@@ -274,17 +277,8 @@ def get_optimized_scrapingbee_config(
     if wait_browser in ['load', 'domcontentloaded', 'networkidle0', 'networkidle2']:
         params['wait_browser'] = wait_browser
     
-    params['timeout'] = str(timeout_ms)
-    
-    # Add extract_rules for remote link extraction if requested and not already set
-    if extract_remotely and 'extract_rules' not in params:
-        # Default extraction rules for links
-        params['extract_rules'] = json.dumps({
-            'links': {
-                'selector': 'a',
-                'output': '@href'
-            }
-        })
+    # Convert timeout from ms to seconds for ScrapingBee format
+    params['timeout'] = str(int(timeout_ms / 1000))
     
     # Add any additional parameters
     if additional_params:

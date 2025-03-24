@@ -7,6 +7,8 @@ rather than generative AI, focusing on deterministic extraction with high confid
 
 import re
 import json
+import logging
+import traceback
 from typing import List, Dict, Any, Tuple, Optional
 from bs4 import BeautifulSoup
 from collections import defaultdict
@@ -14,6 +16,9 @@ from collections import defaultdict
 # Import required base classes and utilities
 from .extraction_strategy import ExtractionStrategy
 from .utils import sanitize_html, normalize_text
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Optional: Try to import spaCy for more advanced NLP capabilities
 try:
@@ -83,106 +88,183 @@ class RuleBasedExtractionStrategy(ExtractionStrategy):
         Returns:
             List of extraction results with confidence scores
         """
-        # Clean and parse HTML
-        clean_html = sanitize_html(html)
-        soup = BeautifulSoup(clean_html, "html.parser")
-        
-        # Extract plain text from HTML
-        text = soup.get_text(separator=" ", strip=True)
-        normalized_text = normalize_text(text)
-        
+        logger.info(f"🔍 Starting rule-based extraction on URL: {url}")
         results = []
         
-        # 1. Apply regex pattern matching
-        pattern_matches = self._apply_patterns(normalized_text)
-        for match in pattern_matches:
-            if match["confidence"] >= self.confidence_threshold:
-                results.append(match)
-        
-        # 2. Apply entity extraction if enabled
-        if self.extract_entities and self.nlp:
-            entity_results = self._extract_entities(normalized_text)
-            for entity in entity_results:
-                if entity["confidence"] >= self.confidence_threshold:
-                    results.append(entity)
-        
-        # 3. Apply relation extraction if enabled
-        if self.extract_relations and len(results) > 1:
-            relation_results = self._extract_relations(results, normalized_text)
-            for relation in relation_results:
-                if relation["confidence"] >= self.confidence_threshold:
-                    results.append(relation)
-        
-        # Add source verification
-        results = self._add_verification(results, normalized_text)
-        
-        # Remove duplicates and sort by confidence
-        unique_results = self._deduplicate_results(results)
-        sorted_results = sorted(unique_results, key=lambda x: x.get("confidence", 0), reverse=True)
-        
-        # Add metadata
-        for result in sorted_results:
-            result["url"] = url
-            result["extraction_method"] = "rule_based"
+        try:
+            # Check if HTML is empty or None
+            if not html:
+                logger.error(f"❌ Empty HTML content for URL: {url}")
+                return [{"error": "Empty HTML content", "extraction_method": "rule_based", "url": url, "confidence": 0.0}]
             
-        return sorted_results
+            # Clean and parse HTML
+            logger.info(f"🧹 Cleaning and parsing HTML ({len(html)} bytes)")
+            clean_html = sanitize_html(html)
+            
+            try:
+                soup = BeautifulSoup(clean_html, "html.parser")
+            except Exception as e:
+                logger.error(f"❌ BeautifulSoup parsing error: {str(e)}")
+                return [{"error": f"HTML parsing error: {str(e)}", "extraction_method": "rule_based", "url": url, "confidence": 0.0}]
+            
+            # Extract plain text from HTML
+            text = soup.get_text(separator=" ", strip=True)
+            if not text:
+                logger.warning(f"⚠️ No text content extracted from HTML for URL: {url}")
+                return [{"error": "No text content in HTML", "extraction_method": "rule_based", "url": url, "confidence": 0.0}]
+                
+            logger.info(f"📝 Extracted {len(text)} characters of text content")
+            normalized_text = normalize_text(text)
+            
+            # 1. Apply regex pattern matching
+            logger.info(f"🔧 Applying pattern matching with {len(self.patterns)} patterns")
+            pattern_matches = self._apply_patterns(normalized_text)
+            logger.info(f"✅ Found {len(pattern_matches)} pattern matches")
+            
+            for match in pattern_matches:
+                if match["confidence"] >= self.confidence_threshold:
+                    results.append(match)
+                    logger.info(f"🎯 Match: {match['type']} - {match['value'][:30]}... (confidence: {match['confidence']:.2f})")
+                else:
+                    logger.debug(f"👎 Low confidence match rejected: {match['type']} - {match['value'][:30]}... (confidence: {match['confidence']:.2f})")
+            
+            # 2. Apply entity extraction if enabled
+            if self.extract_entities and self.nlp:
+                logger.info(f"🧩 Extracting named entities")
+                try:
+                    entity_results = self._extract_entities(normalized_text)
+                    logger.info(f"✅ Found {len(entity_results)} entities")
+                    
+                    for entity in entity_results:
+                        if entity["confidence"] >= self.confidence_threshold:
+                            results.append(entity)
+                            logger.info(f"🧠 Entity: {entity['type']} - {entity['value'][:30]}... (confidence: {entity['confidence']:.2f})")
+                        else:
+                            logger.debug(f"👎 Low confidence entity rejected: {entity['type']} - {entity['value'][:30]}... (confidence: {entity['confidence']:.2f})")
+                except Exception as e:
+                    logger.error(f"❌ Entity extraction error: {str(e)}")
+                    # Continue with other extraction methods
+            
+            # 3. Apply relation extraction if enabled
+            if self.extract_relations and len(results) > 1:
+                logger.info(f"🔄 Extracting relations between {len(results)} items")
+                try:
+                    relation_results = self._extract_relations(results, normalized_text)
+                    logger.info(f"✅ Found {len(relation_results)} relations")
+                    
+                    for relation in relation_results:
+                        if relation["confidence"] >= self.confidence_threshold:
+                            results.append(relation)
+                            logger.info(f"🔗 Relation: {relation['type']} - {relation.get('value', '')[:30]}... (confidence: {relation['confidence']:.2f})")
+                        else:
+                            logger.debug(f"👎 Low confidence relation rejected: {relation['type']} (confidence: {relation['confidence']:.2f})")
+                except Exception as e:
+                    logger.error(f"❌ Relation extraction error: {str(e)}")
+                    # Continue with verification
+            
+            # Add source verification
+            logger.info(f"✅ Adding verification to {len(results)} results")
+            results = self._add_verification(results, normalized_text)
+            
+            # Remove duplicates and sort by confidence
+            unique_results = self._deduplicate_results(results)
+            logger.info(f"🧹 Deduplicated to {len(unique_results)} unique results (from {len(results)})")
+            
+            sorted_results = sorted(unique_results, key=lambda x: x.get("confidence", 0), reverse=True)
+            
+            # Add metadata
+            for result in sorted_results:
+                result["url"] = url
+                result["extraction_method"] = "rule_based"
+            
+            logger.info(f"✨ Rule-based extraction completed with {len(sorted_results)} high-confidence results")
+            return sorted_results
+            
+        except Exception as e:
+            error_msg = f"Extraction error: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"🧨 Traceback: {traceback.format_exc()}")
+            return [{"error": error_msg, "extraction_method": "rule_based", "url": url, "confidence": 0.0}]
     
     def _apply_patterns(self, text: str) -> List[Dict[str, Any]]:
         """Apply regex and keyword patterns to extract information."""
         results = []
         
-        # Apply custom patterns if provided
-        if self.patterns:
-            for pattern_dict in self.patterns:
-                pattern = pattern_dict.get("pattern", "")
-                pattern_type = pattern_dict.get("type", "regex")
-                name = pattern_dict.get("name", "custom_pattern")
-                
-                if pattern_type == "regex":
+        try:
+            # Apply custom patterns if provided
+            if self.patterns:
+                logger.info(f"🧮 Applying {len(self.patterns)} custom patterns")
+                for pattern_dict in self.patterns:
+                    pattern = pattern_dict.get("pattern", "")
+                    pattern_type = pattern_dict.get("type", "regex")
+                    name = pattern_dict.get("name", "custom_pattern")
+                    
                     try:
-                        matches = re.finditer(pattern, text)
-                        for match in matches:
-                            # Get the matched text
-                            match_text = match.group(0)
-                            
-                            # Calculate confidence based on specificity
-                            confidence = self._calculate_confidence(match_text, pattern)
-                            
-                            # Get context if requested
-                            context = self._get_context(text, match.start(), match.end()) if self.include_context else ""
-                            
-                            results.append({
-                                "type": name,
-                                "value": match_text,
-                                "confidence": confidence,
-                                "context": context,
-                                "groups": {k: v for k, v in match.groupdict().items()},
-                                "span": (match.start(), match.end())
-                            })
-                    except re.error as e:
-                        if self.verbose:
-                            print(f"[ERROR] Invalid regex pattern '{pattern}': {e}")
-                
-                elif pattern_type == "keyword":
-                    keyword_matches = self._find_keyword_matches(text, pattern)
-                    for start, end in keyword_matches:
-                        match_text = text[start:end]
-                        confidence = self._calculate_confidence(match_text, pattern)
-                        context = self._get_context(text, start, end) if self.include_context else ""
+                        if pattern_type == "regex":
+                            try:
+                                matches = list(re.finditer(pattern, text))
+                                logger.info(f"✅ Pattern '{name}': Found {len(matches)} matches")
+                                
+                                for match in matches:
+                                    # Get the matched text
+                                    match_text = match.group(0)
+                                    
+                                    # Calculate confidence based on specificity
+                                    confidence = self._calculate_confidence(match_text, pattern)
+                                    
+                                    # Get context if requested
+                                    context = self._get_context(text, match.start(), match.end()) if self.include_context else ""
+                                    
+                                    results.append({
+                                        "type": name,
+                                        "value": match_text,
+                                        "confidence": confidence,
+                                        "context": context,
+                                        "groups": {k: v for k, v in match.groupdict().items()},
+                                        "span": (match.start(), match.end())
+                                    })
+                            except re.error as e:
+                                logger.error(f"❌ Invalid regex pattern '{pattern}': {e}")
+                                continue
                         
-                        results.append({
-                            "type": name,
-                            "value": match_text,
-                            "confidence": confidence,
-                            "context": context,
-                            "span": (start, end)
-                        })
-        
-        # Apply common regulatory patterns if no custom patterns
-        if not self.patterns:
-            results.extend(self._apply_default_patterns(text))
+                        elif pattern_type == "keyword":
+                            try:
+                                keyword_matches = self._find_keyword_matches(text, pattern)
+                                logger.info(f"✅ Keyword '{name}': Found {len(keyword_matches)} matches")
+                                
+                                for start, end in keyword_matches:
+                                    match_text = text[start:end]
+                                    confidence = self._calculate_confidence(match_text, pattern)
+                                    context = self._get_context(text, start, end) if self.include_context else ""
+                                    
+                                    results.append({
+                                        "type": name,
+                                        "value": match_text,
+                                        "confidence": confidence,
+                                        "context": context,
+                                        "span": (start, end)
+                                    })
+                            except Exception as e:
+                                logger.error(f"❌ Error in keyword matching for '{name}': {e}")
+                                continue
+                    
+                    except Exception as e:
+                        logger.error(f"❌ Error processing pattern '{name}': {e}")
+                        # Continue with other patterns
             
-        return results
+            # Apply common regulatory patterns if no custom patterns
+            if not self.patterns:
+                logger.info(f"🔄 No custom patterns, applying default regulatory patterns")
+                default_results = self._apply_default_patterns(text)
+                logger.info(f"✅ Default patterns: Found {len(default_results)} matches")
+                results.extend(default_results)
+                
+            return results
+        
+        except Exception as e:
+            logger.error(f"❌ Fatal error in pattern application: {e}")
+            logger.error(f"🧨 Traceback: {traceback.format_exc()}")
+            return []
     
     def _apply_default_patterns(self, text: str) -> List[Dict[str, Any]]:
         """Apply default patterns for regulatory information."""
@@ -488,20 +570,54 @@ class RegulationExtractionStrategy(RuleBasedExtractionStrategy):
         
         Returns structured data about CE requirements with verification.
         """
-        # Get basic extractions using parent method
-        results = super().extract(url, html, *q, **kwargs)
+        logger.info(f"🏥 Starting healthcare regulation extraction for URL: {url}")
         
-        # Organize extractions into a structured format
-        structured_data = self._structure_regulations(results)
-        
-        # Return both the structured format and the raw extractions
-        return [{
-            "url": url,
-            "extraction_method": "regulation_extraction",
-            "structured_data": structured_data,
-            "raw_extractions": results,
-            "confidence": self._calculate_overall_confidence(results)
-        }]
+        try:
+            # Get basic extractions using parent method
+            results = super().extract(url, html, *q, **kwargs)
+            
+            # Check for errors in base extraction
+            if len(results) == 1 and "error" in results[0]:
+                logger.error(f"❌ Base extraction failed: {results[0]['error']}")
+                return results
+                
+            logger.info(f"✅ Base extraction completed with {len(results)} results")
+            
+            try:
+                # Organize extractions into a structured format
+                structured_data = self._structure_regulations(results)
+                logger.info(f"📋 Structured regulation data with {len(structured_data.get('specialized_requirements', []))} specialized requirements")
+                
+                # Calculate confidence score
+                confidence = self._calculate_overall_confidence(results)
+                logger.info(f"🎯 Overall extraction confidence: {confidence:.2f}")
+                
+                # Return both the structured format and the raw extractions
+                return [{
+                    "url": url,
+                    "extraction_method": "regulation_extraction",
+                    "structured_data": structured_data,
+                    "raw_extractions": results,
+                    "confidence": confidence
+                }]
+            except Exception as e:
+                logger.error(f"❌ Error structuring regulation data: {str(e)}")
+                logger.error(f"🧨 Traceback: {traceback.format_exc()}")
+                
+                # Return basic results if structuring fails
+                return [{
+                    "url": url,
+                    "extraction_method": "regulation_extraction",
+                    "error": f"Structuring error: {str(e)}",
+                    "raw_extractions": results,
+                    "confidence": 0.5  # Medium confidence since we have raw results
+                }]
+                
+        except Exception as e:
+            error_msg = f"Regulation extraction error: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"🧨 Traceback: {traceback.format_exc()}")
+            return [{"error": error_msg, "extraction_method": "regulation_extraction", "url": url, "confidence": 0.0}]
     
     def _structure_regulations(self, results: List[Dict]) -> Dict[str, Any]:
         """Organize extraction results into structured regulation data."""

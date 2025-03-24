@@ -141,6 +141,9 @@ RUN playwright install --with-deps chromium
 
 COPY deploy/docker/* ${APP_HOME}/
 
+# Copy worker.py to app directory
+COPY worker.py ${APP_HOME}/
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD bash -c '\
     MEM=$(free -m | awk "/^Mem:/{print \$2}"); \

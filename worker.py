@@ -10,6 +10,13 @@ import logging
 import redis
 from typing import Dict, Any, Optional, List
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Import our server-optimized clients
 from crawl4ai.direct_scrapingbee import DirectScrapingBeeClient
 
@@ -22,13 +29,6 @@ if ENABLE_HYBRID_CRAWLER:
     except ImportError as e:
         logger.warning(f"⚠️ Could not import hybrid crawler: {e}")
         ENABLE_HYBRID_CRAWLER = False
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
