@@ -19,7 +19,8 @@ spec:
     spec:
       containers:
       - name: crawler
-        image: ${DOCKER_REPO}/crawl4ai:latest  # Replace with your Docker image
+        image: registry.digitalocean.com/crawl4ai/crawler:latest
+        command: ["python", "/app/worker.py"]
         resources:
           requests:
             cpu: 100m
@@ -33,6 +34,11 @@ spec:
             secretKeyRef:
               name: crawl4ai-secrets
               key: scrapingbee-api-key
+        - name: SERPER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crawl4ai-secrets
+              key: serper-api-key
         - name: REDIS_HOST
           value: "crawl4ai-redis"
         - name: CACHE_ENABLED
@@ -43,3 +49,5 @@ spec:
           value: "true"
         - name: WORKER_POLL_INTERVAL
           value: "1"  # Poll interval in seconds
+        - name: ENABLE_HYBRID_CRAWLER
+          value: "true"  # Enable both ScrapingBee and Serper

@@ -10,8 +10,18 @@ import logging
 import redis
 from typing import Dict, Any, Optional, List
 
-# Import our server-optimized ScrapingBee client
+# Import our server-optimized clients
 from crawl4ai.direct_scrapingbee import DirectScrapingBeeClient
+
+# Import hybrid crawler if enabled
+ENABLE_HYBRID_CRAWLER = os.getenv("ENABLE_HYBRID_CRAWLER", "false").lower() == "true"
+if ENABLE_HYBRID_CRAWLER:
+    try:
+        from crawl4ai.search.hybrid_crawler import HybridCrawler, initialize_hybrid_crawler
+        logger.info("✅ Hybrid crawler integration enabled")
+    except ImportError as e:
+        logger.warning(f"⚠️ Could not import hybrid crawler: {e}")
+        ENABLE_HYBRID_CRAWLER = False
 
 # Configure logging
 logging.basicConfig(
@@ -49,8 +59,17 @@ class Crawler4AIWorker:
             decode_responses=True
         )
         
-        # Create ScrapingBee client
+        # Create ScrapingBee client (always needed as primary crawler)
         self.client = DirectScrapingBeeClient()
+        
+        # Create hybrid crawler if enabled
+        self.hybrid_crawler = None
+        if ENABLE_HYBRID_CRAWLER:
+            try:
+                self.hybrid_crawler = initialize_hybrid_crawler()
+                logger.info(f"✅ Hybrid crawler initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize hybrid crawler: {e}")
         
         # Generate a unique worker ID
         import socket
@@ -68,13 +87,17 @@ class Crawler4AIWorker:
             job = json.loads(job_data)
             job_id = job.get("id")
             url = job.get("url")
+            search_query = job.get("search_query")
             params = job.get("params", {})
             
-            if not job_id or not url:
-                logger.error(f"❌ Invalid job data: {job_data}")
+            # Validate job data
+            if not job_id:
+                logger.error(f"❌ Invalid job data (missing id): {job_data}")
                 return
                 
-            logger.info(f"🔄 Processing job {job_id}: {url}")
+            if not url and not search_query:
+                logger.error(f"❌ Invalid job data (missing url or search_query): {job_data}")
+                return
             
             # Mark as processing
             self.redis.hset(
@@ -83,8 +106,50 @@ class Crawler4AIWorker:
                 json.dumps({"worker": self.worker_id, "started": time.time()})
             )
             
-            # Process with ScrapingBee
-            result = self.client.crawl_url(url, params)
+            result = None
+            
+            # Determine job type and process accordingly
+            if url:
+                # Standard URL crawling job
+                logger.info(f"🔄 Processing URL crawl job {job_id}: {url}")
+                result = self.client.crawl_url(url, params)
+            
+            elif search_query and self.hybrid_crawler:
+                # Search-based job - requires hybrid crawler
+                logger.info(f"🔄 Processing search job {job_id}: {search_query}")
+                
+                # If max_results specified, use it, otherwise default to 3
+                max_results = params.get("max_results", 3)
+                
+                if params.get("discover_and_crawl", True):
+                    # Search + crawl discovered URLs
+                    result = {
+                        "search_query": search_query,
+                        "discovered_content": self.hybrid_crawler.discover_and_crawl(
+                            search_query, 
+                            max_urls=max_results,
+                            crawl_params=params.get("crawl_params", {})
+                        )
+                    }
+                else:
+                    # Search only, no crawling
+                    result = {
+                        "search_query": search_query,
+                        "search_results": self.hybrid_crawler.search(
+                            search_query, 
+                            num_results=max_results
+                        )
+                    }
+            else:
+                # Cannot process search job without hybrid crawler
+                if search_query:
+                    error_msg = "Search job received but hybrid crawler not available"
+                    logger.error(f"❌ {error_msg}")
+                    result = {"error": error_msg}
+                else:
+                    error_msg = "Invalid job type - no URL or search query"
+                    logger.error(f"❌ {error_msg}")
+                    result = {"error": error_msg}
             
             # Store the result
             logger.info(f"✅ Job {job_id} completed successfully")
