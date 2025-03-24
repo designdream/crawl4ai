@@ -279,3 +279,40 @@ stream_cfg = run_cfg.clone(
     cache_mode=CacheMode.BYPASS
 )
 ```
+
+# 5. **SearchConfig** - Configuring Search Providers
+
+Crawl4AI supports multiple search providers for hybrid search and web crawling operations. This section outlines the configuration options for supported search providers, including rate limits and best practices.
+
+## 5.1 Serper.dev Integration
+
+Serper.dev is a powerful search API that Crawl4AI integrates with for efficient web searches.
+
+### Rate Limits
+
+Serper.dev imposes rate limits based on your subscription package:
+
+| **Package** | **Rate Limit** |
+|-------------|----------------|
+| Starter     | 50 queries per second |
+| Standard    | 100 queries per second |
+| Scale       | 200 queries per second |
+| Ultimate    | 300 queries per second |
+
+### Configuration
+
+```python
+from crawl4ai import Crawl4AI
+from crawl4ai.config import SearchProvider
+
+# Initialize with Serper as the search provider
+crawler = Crawl4AI(search_provider=SearchProvider.SERPER)
+
+# Or specify in hybrid_search
+results = crawler.hybrid_search(
+    query="artificial intelligence",
+    search_provider=SearchProvider.SERPER
+)
+```
+
+For more detailed information about Serper.dev integration, see [Serper Integration](./serper_integration.md).

@@ -8,8 +8,10 @@ import logging
 import time
 import requests
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Literal
 from urllib.parse import urlparse, quote_plus
+import threading
+from collections import deque
 
 # Set up logging
 logging.basicConfig(
@@ -22,25 +24,74 @@ class SerperSearchClient:
     """
     Client for Serper.dev search API - a cost-effective Google Search API
     Allows Crawl4AI to search for content when specific URLs aren't known
+    
+    Rate limits by tier:
+    - Starter: 50 queries per second
+    - Standard: 100 queries per second
+    - Scale: 200 queries per second
+    - Ultimate: 300 queries per second
     """
     
-    def __init__(self, api_key: str = None, cache_results: bool = True):
+    # Rate limit tiers in queries per second
+    RATE_LIMITS = {
+        "starter": 50,
+        "standard": 100,
+        "scale": 200,
+        "ultimate": 300
+    }
+    
+    def __init__(self, api_key: str = None, cache_results: bool = True, 
+                 tier: Literal["starter", "standard", "scale", "ultimate"] = "starter"):
         self.api_key = api_key or os.getenv('SERPER_API_KEY')
         self.cache_results = cache_results
         self.cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cache", "search")
         
+        # Rate limiting settings
+        self.tier = tier
+        self.queries_per_second = self.RATE_LIMITS.get(tier, 50)  # Default to starter tier
+        self.query_timestamps = deque(maxlen=self.queries_per_second)
+        self.rate_limit_lock = threading.Lock()
+        
         # Create cache directory
         if self.cache_results:
             os.makedirs(self.cache_dir, exist_ok=True)
+            
+        logger.info(f"Initialized SerperSearchClient with {tier} tier ({self.queries_per_second} QPS limit)")
     
-    def search(self, query: str, num_results: int = 10, search_type: str = "search") -> Dict:
+    def _apply_rate_limiting(self):
         """
-        Perform a search using Serper API
+        Apply rate limiting based on the subscription tier.
+        Ensures we don't exceed the queries per second limit.
+        """
+        with self.rate_limit_lock:
+            now = time.time()
+            
+            # Remove timestamps older than 1 second
+            while self.query_timestamps and now - self.query_timestamps[0] > 1.0:
+                self.query_timestamps.popleft()
+            
+            # If we've reached the limit, sleep until we can make another request
+            if len(self.query_timestamps) >= self.queries_per_second:
+                sleep_time = 1.0 - (now - self.query_timestamps[0])
+                if sleep_time > 0:
+                    logger.info(f"Rate limit approaching: sleeping for {sleep_time:.2f} seconds")
+                    time.sleep(sleep_time)
+                    now = time.time()  # Update time after sleeping
+            
+            # Add current timestamp to the queue
+            self.query_timestamps.append(now)
+    
+    def search(self, query: str, num_results: int = 10, search_type: str = "search", 
+               retry_count: int = 3, retry_delay: float = 1.0) -> Dict:
+        """
+        Perform a search using Serper API with rate limiting and retry logic
         
         Args:
             query: Search query string
             num_results: Number of results to return
             search_type: Type of search (search, news, images, etc.)
+            retry_count: Number of retries on rate limit or temporary errors
+            retry_delay: Initial delay between retries (will use exponential backoff)
             
         Returns:
             Dict with search results
@@ -75,61 +126,95 @@ class SerperSearchClient:
         
         logger.info(f"🔍 Searching for: {query}")
         
-        try:
-            headers = {
-                'X-API-KEY': self.api_key,
-                'Content-Type': 'application/json'
-            }
-            
-            payload = {
-                'q': query,
-                'num': num_results
-            }
-            
-            # Use different endpoints based on search type
-            endpoint = 'search'
-            if search_type == 'news':
-                endpoint = 'news'
-            elif search_type == 'places':
-                endpoint = 'places'
-            elif search_type == 'images':
-                endpoint = 'images'
-            
-            response = requests.post(
-                f'https://google.serper.dev/{endpoint}',
-                headers=headers,
-                json=payload,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                # Add cache timestamp
-                result['cache_timestamp'] = datetime.now().isoformat()
-                
-                # Cache result if enabled
-                if self.cache_results and cache_file:
-                    try:
-                        with open(cache_file, 'w') as f:
-                            json.dump(result, f)
-                    except Exception as e:
-                        logger.error(f"Error caching search results: {e}")
-                
-                return result
-            else:
-                logger.error(f"❌ Search API error: HTTP {response.status_code}: {response.text}")
-                return {
-                    "error": f"API error: HTTP {response.status_code}",
-                    "organic": []
+        # Apply rate limiting before making the request
+        self._apply_rate_limiting()
+        
+        for attempt in range(retry_count):
+            try:
+                headers = {
+                    'X-API-KEY': self.api_key,
+                    'Content-Type': 'application/json'
                 }
                 
-        except Exception as e:
-            logger.error(f"❌ Search error: {str(e)}")
-            return {
-                "error": str(e),
-                "organic": []
-            }
+                payload = {
+                    'q': query,
+                    'num': num_results
+                }
+                
+                # Use different endpoints based on search type
+                endpoint = 'search'
+                if search_type == 'news':
+                    endpoint = 'news'
+                elif search_type == 'places':
+                    endpoint = 'places'
+                elif search_type == 'images':
+                    endpoint = 'images'
+                
+                response = requests.post(
+                    f'https://google.serper.dev/{endpoint}',
+                    headers=headers,
+                    json=payload,
+                    timeout=10
+                )
+                
+                # Handle different response status codes
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # Add cache timestamp
+                    result['cache_timestamp'] = datetime.now().isoformat()
+                    
+                    # Cache result if enabled
+                    if self.cache_results and cache_file:
+                        try:
+                            with open(cache_file, 'w') as f:
+                                json.dump(result, f)
+                        except Exception as e:
+                            logger.error(f"Error caching search results: {e}")
+                    
+                    return result
+                
+                elif response.status_code == 429:  # Too Many Requests
+                    # Rate limit exceeded
+                    retry_wait = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Rate limit exceeded. Retrying in {retry_wait} seconds (attempt {attempt+1}/{retry_count})")
+                    time.sleep(retry_wait)
+                    continue
+                    
+                elif response.status_code >= 500:  # Server errors
+                    # Server error, retry
+                    retry_wait = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Server error. Retrying in {retry_wait} seconds (attempt {attempt+1}/{retry_count})")
+                    time.sleep(retry_wait)
+                    continue
+                    
+                else:
+                    logger.error(f"❌ Search API error: HTTP {response.status_code}: {response.text}")
+                    return {
+                        "error": f"API error: HTTP {response.status_code}",
+                        "message": response.text,
+                        "organic": []
+                    }
+                
+            except requests.exceptions.RequestException as e:
+                # Network error, retry
+                if attempt < retry_count - 1:
+                    retry_wait = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Network error. Retrying in {retry_wait} seconds (attempt {attempt+1}/{retry_count}): {str(e)}")
+                    time.sleep(retry_wait)
+                    continue
+                else:
+                    logger.error(f"❌ Network error after {retry_count} attempts: {str(e)}")
+                    return {
+                        "error": f"Network error: {str(e)}",
+                        "organic": []
+                    }
+            except Exception as e:
+                logger.error(f"❌ Search error: {str(e)}")
+                return {
+                    "error": str(e),
+                    "organic": []
+                }
     
     def get_urls_for_topic(self, topic: str, num_results: int = 5) -> List[str]:
         """
@@ -154,6 +239,19 @@ class SerperSearchClient:
         return urls[:num_results]
 
 # Initialize function for easy import
-def initialize_serper_client(api_key: str = None) -> SerperSearchClient:
-    """Initialize a Serper search client instance"""
-    return SerperSearchClient(api_key=api_key)
+def initialize_serper_client(api_key: str = None, tier: str = "starter") -> SerperSearchClient:
+    """
+    Initialize a Serper search client instance
+    
+    Args:
+        api_key: Serper API key (if None, reads from SERPER_API_KEY env var)
+        tier: Subscription tier (starter, standard, scale, ultimate) - affects rate limiting
+    
+    Returns:
+        SerperSearchClient instance configured with appropriate rate limits
+    """
+    if tier not in SerperSearchClient.RATE_LIMITS:
+        logger.warning(f"Unknown Serper tier '{tier}', defaulting to 'starter'")
+        tier = "starter"
+        
+    return SerperSearchClient(api_key=api_key, tier=tier)

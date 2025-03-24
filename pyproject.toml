@@ -58,20 +58,36 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-pdf = ["PyPDF2"]  
+pdf = ["PyMuPDF>=1.22.0", "pytesseract>=0.3.10", "pdf2image>=1.16.0", "PyPDF2"]  # Keep PyPDF2 for backward compatibility
+pdf-enhanced = ["PyMuPDF>=1.22.0", "pytesseract>=0.3.10", "pdf2image>=1.16.0", "redis>=4.5.1", "hiredis>=2.0.0"]  # Enhanced PDF processing with OCR and Redis cache
 torch = ["torch", "nltk", "scikit-learn"]
 transformer = ["transformers", "tokenizers"]
 cosine = ["torch", "transformers", "nltk"]
 sync = ["selenium"]
+redis = ["redis>=4.5.0", "hiredis>=2.2.0"]
 all = [
-    "PyPDF2",
+    # PDF Processing
+    "PyMuPDF>=1.22.0",
+    "pytesseract>=0.3.10", 
+    "pdf2image>=1.16.0",
+    "PyPDF2",  # For backward compatibility
+    
+    # Machine Learning
     "torch",
     "nltk",
     "scikit-learn",
     "transformers",
     "tokenizers",
+    
+    # Browser Integration
     "selenium",
-    "PyPDF2"  
+    
+    # Caching and Performance
+    "redis>=4.5.1", 
+    "hiredis>=2.2.0",
+    
+    # Proxy Integration
+    "scrapingbee>=1.1.1"
 ]
 
 [project.scripts]

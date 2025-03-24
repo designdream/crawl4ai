@@ -1,11 +1,19 @@
 from pathlib import Path
 import asyncio
 from dataclasses import asdict
+
 from crawl4ai.async_logger import AsyncLogger
 from crawl4ai.async_crawler_strategy import AsyncCrawlerStrategy
-from crawl4ai.models import AsyncCrawlResponse, ScrapingResult 
+from crawl4ai.models import AsyncCrawlResponse, ScrapingResult
 from crawl4ai.content_scraping_strategy import ContentScrapingStrategy
-from .processor import NaivePDFProcessorStrategy  # Assuming your current PDF code is in pdf_processor.py
+
+# Import original processor components for backward compatibility
+from .processor import NaivePDFProcessorStrategy, PDFProcessResult, PDFMetadata, PDFPage
+
+# Import new enhanced components
+from .enhanced_processor import EnhancedPDFProcessorStrategy
+from .redis_cache import PDFRedisCache
+from .enhanced_crawler import EnhancedPDFCrawlerStrategy, EnhancedPDFContentScrapingStrategy
 
 class PDFCrawlerStrategy(AsyncCrawlerStrategy):
     def __init__(self, logger: AsyncLogger = None):
