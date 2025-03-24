@@ -22,3 +22,13 @@ nltk>=3.9.1
 rich>=13.9.4
 cssselect>=1.2.0
 faust-cchardet>=2.1.19
+
+# Enhanced PDF Processing Dependencies
+PyMuPDF>=1.21.1  # fitz library for PDF processing
+pytesseract>=0.3.10  # OCR support
+pdf2image>=1.16.3  # Convert PDF to images for OCR
+redis>=4.5.1  # Redis client for caching
+hiredis>=2.0.0  # C extension for Redis for better performance
+
+# API Compatibility Dependencies
+httpx>=0.24.0  # Async HTTP client for API compatibility layer

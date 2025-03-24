@@ -11,6 +11,9 @@ dnspython>=2.7.0
 email-validator>=2.2.0
 scrapingbee>=1.1.1
 
+# API compatibility dependencies
+httpx>=0.24.0
+
 # PDF processing dependencies
 PyMuPDF>=1.22.0
 pytesseract>=0.3.10

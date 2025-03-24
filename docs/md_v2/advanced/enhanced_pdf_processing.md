@@ -188,6 +188,97 @@ You can configure the Redis connection using the `REDIS_URL` environment variabl
 export REDIS_URL="redis://redis-server:6379/0"
 ```
 
+## API Integration
+
+### Using with the Crawl4AI API
+
+The Enhanced PDF Processing capabilities are fully integrated with the Crawl4AI API service. You can enable PDF processing by including specific parameters in your API requests.
+
+#### API Endpoints
+
+The API supports multiple endpoint paths for backward compatibility:
+
+- Primary endpoint: `/crawl` (recommended for new integrations)
+- Legacy endpoints (fully supported):
+  - `/api/crawl`
+  - `/api/v1/crawl`
+
+#### Example API Request (Current Endpoint)
+
+```bash
+curl -X POST \
+  https://api.example.com/crawl \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -d '{"url":"https://example.com/document.pdf","params":{"enable_pdf_processing":true,"enable_ocr":true,"extract_tables":true}}'
+```
+
+#### Example API Request (Legacy Endpoint)
+
+```bash
+curl -X POST \
+  https://api.example.com/api/v1/crawl \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -d '{"url":"https://example.com/document.pdf","params":{"enable_pdf_processing":true,"enable_ocr":true,"extract_tables":true}}'
+```
+
+#### ScrapingBee Integration
+
+For PDFs behind anti-scraping protection, you can utilize ScrapingBee by including a proxy configuration:
+
+```bash
+curl -X POST \
+  https://api.example.com/crawl \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -d '{"url":"https://example.com/protected-document.pdf","params":{"enable_pdf_processing":true,"proxy":"http://AJTU2OHTQB3M8Z8RRQ0WRID8IU0XSZM6CXYVH4U9MSICE3OE1WWYLA70MDOTL184644GKIXI3A5HEPQ1:render_js=true&premium=true@proxy.scrapingbee.com:8886"}}'
+```
+
+> **Important**: The ScrapingBee proxy configuration must use this specific format: `http://API_KEY:render_js=true&premium=true@proxy.scrapingbee.com:8886`
+- Compatible legacy endpoints: 
+  - `/api/crawl`
+  - `/api/v1/crawl`
+
+#### Example Request
+
+```bash
+curl -X POST https://api.crawl4ai.com/crawl \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/document.pdf",
+    "params": {
+      "enable_pdf_processing": true,
+      "enable_ocr": true,
+      "extract_tables": true
+    }
+  }'
+```
+
+The same request would also work with the legacy endpoints:
+
+```bash
+curl -X POST https://api.crawl4ai.com/api/crawl \
+  -H "Content-Type: application/json" \
+  -d '{ ... }'
+```
+
+### ScrapingBee Integration
+
+When processing PDFs from websites that require browser rendering or are behind anti-scraping protections, use the ScrapingBee proxy configuration:
+
+```json
+{
+  "url": "https://example.com/document.pdf",
+  "params": {
+    "enable_pdf_processing": true,
+    "proxy": "http://API_KEY:render_js=true&premium=true@proxy.scrapingbee.com:8886"
+  }
+}
+```
+
+Replace `API_KEY` with your ScrapingBee API key. In production environments, this key should be securely loaded from environment variables.
+
 ## Requirements
 
 The Enhanced PDF Processing module requires the following dependencies:
@@ -199,6 +290,7 @@ The Enhanced PDF Processing module requires the following dependencies:
 - Poppler (system dependency)
 - Redis
 - hiredis (optional, for better Redis performance)
+- httpx (for API compatibility layer)
 
 You can install these dependencies using:
 

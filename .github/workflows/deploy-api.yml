@@ -1,0 +1,158 @@
+name: Deploy Crawl4AI API with Compatibility Layer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api_server.py'
+      - 'api_path_compatibility.py'
+      - 'requirements.txt'
+      - 'deploy/docker/**'
+      - '.github/workflows/deploy-api.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: registry.digitalocean.com
+      IMAGE_NAME: registry.digitalocean.com/crawl4ai/crawler
+    
+    steps:
+      - name: Checkout code
+        run: |
+          git clone https://github.com/${{ github.repository }}.git .
+          git checkout ${{ github.ref }}
+        
+      # Set up Docker
+      - name: Set up Docker
+        run: |
+          echo "Setting up Docker for DigitalOcean Registry"
+          # DigitalOcean requires the API token for both username and password
+          docker login registry.digitalocean.com \
+            --username ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} \
+            --password ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        
+      # Build and push the Docker image
+      - name: Build and push Docker image
+        run: |
+          # Build the image
+          docker build -t ${{ env.IMAGE_NAME }}:latest -t ${{ env.IMAGE_NAME }}:${{ github.sha }} -f deploy/docker/Dockerfile.secure .
+          
+          # Push the images
+          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        
+      # Set up kubectl with provided kubeconfig
+      - name: Set up kubectl
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/stable.txt"
+          curl -LO "https://dl.k8s.io/release/$(cat stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+          # Set up kubeconfig
+          mkdir -p $HOME/.kube
+          # Write Kubernetes config from GitHub secrets
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          
+      - name: Update API Deployment
+        run: |
+          # Update the deployment with the new image
+          kubectl set image deployment/crawl4ai-api api=${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
+          # Apply specific configuration for API compatibility
+          cat <<EOF > deployment-patch.yaml
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: crawl4ai-api
+          spec:
+            template:
+              spec:
+                containers:
+                - name: api
+                  env:
+                  - name: SERPER_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        key: serper-api-key
+                        name: crawl4ai-secrets
+                  - name: SCRAPINGBEE_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        key: scrapingbee-key
+                        name: crawl4ai-secrets
+                  - name: SCRAPINGBEE_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        key: scrapingbee-key
+                        name: crawl4ai-secrets
+                  - name: SERPER_TIER
+                    value: "standard"
+                  resources:
+                    limits:
+                      cpu: "500m"
+                      memory: "1Gi"
+                    requests:
+                      cpu: "250m"
+                      memory: "512Mi"
+          EOF
+          
+          kubectl patch deployment crawl4ai-api --patch-file deployment-patch.yaml
+          
+      - name: Wait for deployment to be ready
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/crawl4ai-api --timeout=300s
+          
+      - name: Copy test scripts to the cluster
+        run: |
+          # Copy test script to a pod
+          POD_NAME=$(kubectl get pods -l app=crawl4ai,component=api -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "Copying test scripts to pod $POD_NAME"
+          kubectl cp test_deployed_api.py $POD_NAME:/app/test_deployed_api.py
+          kubectl cp test_api_compatibility.py $POD_NAME:/app/test_api_compatibility.py
+          
+      - name: Run API compatibility tests
+        run: |
+          # Get pod name
+          POD_NAME=$(kubectl get pods -l app=crawl4ai,component=api -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "Running tests in pod $POD_NAME"
+          
+          # Install httpx if not already installed
+          kubectl exec $POD_NAME -- pip install httpx --no-cache-dir
+          
+          # Run tests inside the pod
+          kubectl exec $POD_NAME -- python test_api_compatibility.py
+          
+          echo "API compatibility test completed successfully!"
+          
+      - name: Verify all endpoints
+        run: |
+          # Set up port forwarding
+          POD_NAME=$(kubectl get pods -l app=crawl4ai,component=api -o jsonpath='{.items[0].metadata.name}')
+          kubectl port-forward $POD_NAME 8000:8000 &
+          PF_PID=$!
+          
+          # Wait for port-forwarding to be established
+          sleep 5
+          
+          # Test all endpoints
+          echo "Testing current endpoint: /crawl"
+          curl -s -X POST -H "Content-Type: application/json" -d '{"url":"https://example.com"}' http://localhost:8000/crawl | grep job_id
+          
+          echo "Testing legacy endpoint 1: /api/crawl"
+          curl -s -X POST -H "Content-Type: application/json" -d '{"url":"https://example.com"}' http://localhost:8000/api/crawl | grep job_id
+          
+          echo "Testing legacy endpoint 2: /api/v1/crawl"
+          curl -s -X POST -H "Content-Type: application/json" -d '{"url":"https://example.com"}' http://localhost:8000/api/v1/crawl | grep job_id
+          
+          # Clean up port forwarding
+          kill $PF_PID
+          
+          echo "All API endpoints verified successfully!"

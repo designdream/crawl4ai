@@ -1,6 +1,6 @@
 # 🚀🤖 Crawl4AI: Open-source LLM Friendly Web Crawler & Scraper.
 
-> **Note**: This deployment includes JWT authentication and ScrapingBee integration with CI/CD pipeline. Deployed to 164.92.69.88 and available at https://s.dy.me
+> **Note**: This deployment includes JWT authentication, ScrapingBee integration, and API path compatibility for legacy endpoints (supports `/api/crawl`, `/api/v1/crawl`, and `/crawl`). Deployed to 164.92.69.88 and available at https://s.dy.me
 
 <div align="center">
 
@@ -24,6 +24,8 @@
 Crawl4AI is the #1 trending GitHub repository, actively maintained by a vibrant community. It delivers blazing-fast, AI-ready web crawling tailored for LLMs, AI agents, and data pipelines. Open source, flexible, and built for real-time performance, Crawl4AI empowers developers with unmatched speed, precision, and deployment ease.  
 
 [✨ Check out latest update v0.5.0](#-recent-updates)
+
+🔍 **Enhanced PDF Processing**: New PyMuPDF and OCR-powered PDF processing with Redis caching for superior text extraction, layout preservation, and performance optimization!
 
 🎉 **Version 0.5.0 is out!** This major release introduces Deep Crawling with BFS/DFS/BestFirst strategies, Memory-Adaptive Dispatcher, Multiple Crawling Strategies (Playwright and HTTP), Docker Deployment with FastAPI, Command-Line Interface (CLI), and more! [Read the release notes →](https://docs.crawl4ai.com/blog)
 
@@ -167,6 +169,9 @@ crwl https://www.example.com/products -q "Extract all product prices"
 <summary>🎯 <strong>Additional Features</strong></summary>
 
 - 🕶️ **Stealth Mode**: Avoid bot detection by mimicking real users.
+- 📄 **Enhanced PDF Processing**: Extract text, images, and metadata from PDFs with advanced PyMuPDF integration.
+- 🔍 **OCR Support**: Process scanned documents with Tesseract OCR integration.
+- ⚡ **Redis Caching**: Optimize performance with Redis-based caching for PDF processing.
 - 🏷️ **Tag-Based Content Extraction**: Refine crawling based on custom tags, headers, or metadata.
 - 🔗 **Link Analysis**: Extract and analyze all links for detailed data exploration.
 - 🛡️ **Error Handling**: Robust error management for seamless execution.

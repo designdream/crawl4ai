@@ -7,6 +7,7 @@ import time
 import json
 import uuid
 import logging
+import httpx
 from typing import Dict, Any, List, Optional
 import redis
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
@@ -49,6 +50,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Import and add compatibility routes for legacy API paths
+try:
+    from api_path_compatibility import add_compatibility_routes
+    add_compatibility_routes(app)
+    logger.info("API compatibility routes added for backward compatibility")
+except ImportError:
+    logger.warning("API compatibility module not found, legacy paths won't be supported")
+
 # Initialize Redis client
 redis_client = redis.Redis(
     host=REDIS_HOST,
@@ -57,6 +66,9 @@ redis_client = redis.Redis(
     password=REDIS_PASSWORD,
     decode_responses=True
 )
+
+# Create HTTP client for forwarding requests (used by compatibility routes)
+app.state.client = httpx.AsyncClient()
 
 # Pydantic models for request/response validation
 class CrawlRequest(BaseModel):
