@@ -20,9 +20,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        run: |
-          git clone https://github.com/${{ github.repository }}.git .
-          git checkout ${{ github.ref }}
+        uses: actions/checkout@v2
         
       # Set up Docker
       - name: Set up Docker
@@ -30,8 +28,8 @@ jobs:
           echo "Setting up Docker for DigitalOcean Registry"
           # DigitalOcean requires the API token for both username and password
           docker login registry.digitalocean.com \
-            --username ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} \
-            --password ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+            --username ${{ secrets.DO_ACCESS_TOKEN }} \
+            --password ${{ secrets.DO_ACCESS_TOKEN }}
         
       # Build and push the Docker image
       - name: Build and push Docker image
@@ -55,7 +53,7 @@ jobs:
           # Set up kubeconfig
           mkdir -p $HOME/.kube
           # Write Kubernetes config from GitHub secrets
-          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
           
       - name: Update API Deployment
